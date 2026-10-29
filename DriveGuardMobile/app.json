@@ -1,0 +1,63 @@
+{
+  "expo": {
+    "name": "DriveGuard",
+    "slug": "DriveGuardMobile",
+    "version": "1.0.0",
+    "description": "AI driver fatigue monitoring system — real-time eye and mouth tracking via WebSocket telemetry.",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#000000",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.driveguard.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "DriveGuard uses the front camera to monitor your eyes and detect driver fatigue in real time.",
+        "NSMicrophoneUsageDescription": "Microphone access is not used but required by the camera framework."
+      }
+    },
+    "android": {
+      "package": "com.driveguard.mobile",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#000000",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#000000"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "DriveGuard uses the front camera to monitor your eyes and detect driver fatigue in real time.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      "expo-status-bar",
+      "expo-audio",
+      "expo-asset"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "your-eas-project-id"
+      }
+    }
+  }
+}
