@@ -108,8 +108,6 @@ const syncDriverWithBackend = async (userData) => {
     // Offline or server not configured yet; local state remains primary
   }
 };
-  }
-};
 
 // ─── Basic email validation (contains "@") ───────────────────────────────────
 export const isValidEmail = (email) =>
