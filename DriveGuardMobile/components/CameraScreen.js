@@ -276,7 +276,7 @@ const FaceMeshOverlay = memo(({ landmarks, fatigueState }) => {
 
 // ─── Main CameraScreen ────────────────────────────────────────────────────────
 export function CameraScreen({ route, navigation, onCriticalAlarm }) {
-  const serverIpFromRoute = route?.params?.serverIp ?? null;
+  const serverIpFromRoute = route?.params?.serverIp || 'driveguard-backend-h430.onrender.com';
   const { user, saveSession } = useAuth();
 
   const [permission, requestPermission] = useCameraPermissions();
@@ -312,7 +312,7 @@ export function CameraScreen({ route, navigation, onCriticalAlarm }) {
   const sessionSavedRef  = useRef(false);
   const saveSessionRef   = useRef(saveSession);
   useEffect(() => { saveSessionRef.current = saveSession; }, [saveSession]);
-  const serverIp         = useRef(serverIpFromRoute).current;
+  const serverIp         = useRef(serverIpFromRoute || 'driveguard-backend-h430.onrender.com').current;
 
   // ── State order for peak tracking ─────────────────────────────────────────
   const STATE_ORDER = { AWAKE: 0, CALIBRATING: 0, WARNING: 1, CRITICAL: 2 };

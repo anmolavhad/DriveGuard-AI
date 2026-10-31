@@ -90,8 +90,8 @@ export const resolveHttpUrl = (serverInput, path = '') => {
 const syncDriverWithBackend = async (userData) => {
   if (!userData?.driverCode) return;
   try {
-    const serverIp = await AsyncStorage.getItem('@driveguard_server_ip');
-    if (!serverIp) return;
+    const savedIp = await AsyncStorage.getItem('@driveguard_server_ip');
+    const serverIp = savedIp || 'driveguard-backend-h430.onrender.com';
     const url = resolveHttpUrl(serverIp, '/api/drivers/register');
     await fetch(url, {
       method: 'POST',
@@ -308,15 +308,14 @@ export function AuthProvider({ children }) {
 
     // Sync session to the unified backend
     try {
-      const serverIp = await AsyncStorage.getItem('@driveguard_server_ip');
-      if (serverIp) {
-        const url = resolveHttpUrl(serverIp, '/api/sessions');
-        fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newSession),
-        }).catch(() => {});
-      }
+      const savedIp = await AsyncStorage.getItem('@driveguard_server_ip');
+      const serverIp = savedIp || 'driveguard-backend-h430.onrender.com';
+      const url = resolveHttpUrl(serverIp, '/api/sessions');
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSession),
+      }).catch(() => {});
     } catch (_) {}
   }, [user, sessions, persistSessions]);
 

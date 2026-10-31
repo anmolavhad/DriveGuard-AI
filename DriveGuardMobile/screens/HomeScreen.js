@@ -27,7 +27,6 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useAuth } from '../context/AuthContext';
-import { IPConfigModal } from '../components/IPConfigModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const IP_KEY = '@driveguard_server_ip';
@@ -119,11 +118,12 @@ function ProfileModal({ visible, onClose, user, onSignOut }) {
   );
 }
 
+const PRODUCTION_SERVER = 'driveguard-backend-h430.onrender.com';
+
 // ─── Main Screen Component ────────────────────────────────────────────────────
 export function HomeScreen({ navigation }) {
   const { user, signOut } = useAuth();
-  const [serverIp, setServerIp]             = useState(null);
-  const [ipModalVisible, setIpModalVisible] = useState(false);
+  const [serverIp, setServerIp]             = useState(PRODUCTION_SERVER);
   const [profileVisible, setProfileVisible] = useState(false);
 
   useEffect(() => {
@@ -132,13 +132,8 @@ export function HomeScreen({ navigation }) {
       .catch(() => {});
   }, []);
 
-  const handleIpSave = useCallback(async (ip) => {
-    setServerIp(ip);
-    try { await AsyncStorage.setItem(IP_KEY, ip); } catch (_) {}
-  }, []);
-
   const handleStartDetection = () => {
-    navigation.navigate('Camera', { serverIp });
+    navigation.navigate('Camera', { serverIp: serverIp || PRODUCTION_SERVER });
   };
 
   const initials = user?.displayName
@@ -169,17 +164,11 @@ export function HomeScreen({ navigation }) {
           </View>
 
           <View style={styles.topBarActions}>
-            {/* IP config pill */}
-            <TouchableOpacity
-              style={[styles.ipPill, serverIp && styles.ipPillConnected]}
-              onPress={() => setIpModalVisible(true)}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.statusDotSmall, { backgroundColor: serverIp ? '#22C55E' : '#EAB308' }]} />
-              <Text style={styles.ipPillText}>
-                {serverIp ? serverIp : 'SET IP'}
-              </Text>
-            </TouchableOpacity>
+            {/* Live Cloud indicator */}
+            <View style={styles.cloudBadge}>
+              <View style={styles.statusDotSmall} />
+              <Text style={styles.cloudBadgeText}>CLOUD LIVE</Text>
+            </View>
 
             {/* Profile avatar */}
             <TouchableOpacity
@@ -238,9 +227,7 @@ export function HomeScreen({ navigation }) {
               </View>
               <Text style={styles.heroTitle}>Start Guard Session</Text>
               <Text style={styles.heroSub}>
-                {serverIp
-                  ? `Active Host: ${serverIp} • FaceMesh 3D HUD`
-                  : 'Tap to launch camera • Configure backend IP'}
+                Real-Time FaceMesh 3D HUD • Cloud AI Vigilance
               </Text>
             </View>
 
@@ -325,14 +312,6 @@ export function HomeScreen({ navigation }) {
         <View style={{ height: 48 }} />
       </ScrollView>
 
-      {/* IP Config Modal */}
-      <IPConfigModal
-        visible={ipModalVisible}
-        currentIp={serverIp ?? ''}
-        onSave={handleIpSave}
-        onClose={() => setIpModalVisible(false)}
-      />
-
       {/* Profile Modal */}
       <ProfileModal
         visible={profileVisible}
@@ -405,6 +384,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  cloudBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#15803D',
+    backgroundColor: 'rgba(34,197,94,0.08)',
+    borderRadius: 999,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+  },
+  cloudBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#22C55E',
+    letterSpacing: 1.2,
   },
   ipPill: {
     flexDirection: 'row',

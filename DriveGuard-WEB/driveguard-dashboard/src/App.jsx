@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 
 // ─── Backend API & Storage Configuration ─────────────────────────────────────
-const RAW_API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+const RAW_API_BASE = import.meta.env.VITE_API_BASE || 'https://driveguard-backend-h430.onrender.com';
 const API_BASE = RAW_API_BASE.replace(/\/+$/, '');
 const WS_TELEMETRY_URL = import.meta.env.VITE_WS_URL || (
   API_BASE.startsWith('https://')
