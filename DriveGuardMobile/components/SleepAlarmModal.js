@@ -1,3 +1,26 @@
+/**
+ * SleepAlarmModal.js — DriveGuard AI
+ * ─────────────────────────────────────────────────────────────────────────────
+ * High-Priority Emergency Microsleep Alarm Overlay.
+ *
+ * Theme:
+ *   Matches DriveGuard Minimalist Dark Automotive Cockpit:
+ *   • Pure black backdrop with pulsing subtle emergency perimeter
+ *   • Near-black surface (#0A0A0A) with precision 1.5px crimson borders (#EF4444)
+ *   • Monospace tabular telemetry counter for alarm duration
+ *   • High-precision vector SVG iconography (zero cartoon emojis)
+ *   • Industrial emergency "DISMISS ALARM" action button
+ *
+ * Audio & Haptic Architecture:
+ *   • Multi-engine native audio:
+ *       1. expo-av (Audio.Sound.createAsync) — primary rock-solid mobile player
+ *       2. expo-audio — modern fallback engine
+ *       3. Web Audio API synthesizer — high-pitch sawtooth siren for web browsers
+ *   • Audio mode initialized with playsInSilentModeIOS: true, shouldDuckAndroid: false
+ *   • Android heavy haptic vibration pattern ([0, 500, 200, 500, 200, 500], loop)
+ *   • iOS repeating 1-second pulse interval
+ */
+
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import {
   Modal,
@@ -7,119 +30,221 @@ import {
   StyleSheet,
   Animated,
   Easing,
-  Dimensions,
   Platform,
   Vibration,
 } from 'react-native';
-// Safe optional require for expo-audio to prevent native module crashes on older runtimes
+import Svg, { Path } from 'react-native-svg';
+
+// ── Audio Engine Safe Imports ─────────────────────────────────────────────────
+let ExpoAvAudio = null;
+try {
+  ExpoAvAudio = require('expo-av').Audio;
+} catch (e) {
+  console.warn('[SleepAlarmModal] expo-av not available:', e);
+}
+
 let ExpoAudio = null;
 try {
   ExpoAudio = require('expo-audio');
 } catch (e) {
-  console.warn('[SleepAlarmModal] expo-audio native module not available, falling back to vibration:', e);
+  console.warn('[SleepAlarmModal] expo-audio not available:', e);
 }
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+// ── Audio Asset ───────────────────────────────────────────────────────────────
+const ALARM_SOUND_ASSET = require('../assets/alarm.wav');
 
-/**
- * SleepAlarmModal
- * ────────────────────────────────────────────────────────────────────────────
- * Full-screen emergency alarm that fires when microsleep is detected.
- *
- * Features:
- *  • Plays a loud looping alarm sound (expo-audio with graceful fallback)
- *  • Vibration pattern on Android
- *  • Pulsing red screen flash animation
- *  • Large "STOP ALARM" button to dismiss
- *  • Auto-fades in for maximum visibility
- *
- * Props:
- *   visible   {boolean}    show/hide the modal
- *   onDismiss {() => void} called when user taps "Stop Alarm"
- */
+// ── Web Audio Synthesizer (Fallback for Web / Browsers) ───────────────────────
+let webAudioCtx = null;
+
+function playWebBeep() {
+  try {
+    if (typeof window === 'undefined') return;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    if (!webAudioCtx || webAudioCtx.state === 'closed') {
+      webAudioCtx = new AudioCtx();
+    }
+    if (webAudioCtx.state === 'suspended') {
+      webAudioCtx.resume();
+    }
+    const osc = webAudioCtx.createOscillator();
+    const gain = webAudioCtx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(1150, webAudioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(700, webAudioCtx.currentTime + 0.28);
+    gain.gain.setValueAtTime(0.9, webAudioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, webAudioCtx.currentTime + 0.28);
+    osc.connect(gain);
+    gain.connect(webAudioCtx.destination);
+    osc.start();
+    osc.stop(webAudioCtx.currentTime + 0.30);
+  } catch (_) {}
+}
+
 export function SleepAlarmModal({ visible, onDismiss }) {
-  const flashAnim   = useRef(new Animated.Value(0)).current;
-  const scaleAnim   = useRef(new Animated.Value(0.8)).current;
-  const pulseAnim   = useRef(new Animated.Value(1)).current;
-  const flashLoop   = useRef(null);
-  const pulseLoop   = useRef(null);
-  const soundRef    = useRef(null);
+  const flashAnim       = useRef(new Animated.Value(0)).current;
+  const scaleAnim       = useRef(new Animated.Value(0.92)).current;
+  const pulseAnim       = useRef(new Animated.Value(1)).current;
+  const flashLoop       = useRef(null);
+  const pulseLoop       = useRef(null);
+
+  const soundAvRef      = useRef(null);
+  const soundExpoRef    = useRef(null);
+  const webIntervalRef  = useRef(null);
+  const timerRef        = useRef(null);
+  const iosVibrateTimer = useRef(null);
+
   const [secondsActive, setSecondsActive] = useState(0);
-  const timerRef    = useRef(null);
 
-  // ── Start alarm sound using expo-audio ─────────────────────────────────────
+  // ── Start Audio Engine ──────────────────────────────────────────────────────
   const startAlarmSound = useCallback(async () => {
-    try {
-      if (!ExpoAudio || !ExpoAudio.createAudioPlayer) {
-        return;
+    // 1. Web browser fallback: Web Audio API Oscillator
+    if (Platform.OS === 'web') {
+      playWebBeep();
+      if (!webIntervalRef.current) {
+        webIntervalRef.current = setInterval(playWebBeep, 420);
       }
+      return;
+    }
 
-      if (typeof ExpoAudio.setAudioModeAsync === 'function') {
-        await ExpoAudio.setAudioModeAsync({
+    // 2. Primary Mobile Engine: expo-av
+    let avSuccess = false;
+    if (ExpoAvAudio) {
+      try {
+        await ExpoAvAudio.setAudioModeAsync({
           playsInSilentModeIOS: true,
           staysActiveInBackground: true,
           shouldDuckAndroid: false,
           playThroughEarpieceAndroid: false,
+          allowsRecordingIOS: false,
         }).catch(() => {});
-      }
 
-      const player = ExpoAudio.createAudioPlayer(
-        'https://www.soundjay.com/buttons/sounds/beep-07.mp3'
-      );
-      if (player) {
-        player.loop = true;
-        if (typeof player.volume !== 'undefined') {
-          player.volume = 1.0;
+        // Clean up previous sound if lingering
+        if (soundAvRef.current) {
+          try {
+            await soundAvRef.current.stopAsync();
+            await soundAvRef.current.unloadAsync();
+          } catch (_) {}
+          soundAvRef.current = null;
         }
-        player.play();
-        soundRef.current = player;
+
+        const { sound } = await ExpoAvAudio.Sound.createAsync(
+          ALARM_SOUND_ASSET,
+          {
+            shouldPlay: true,
+            isLooping: true,
+            volume: 1.0,
+          }
+        );
+        soundAvRef.current = sound;
+        await sound.playAsync();
+        avSuccess = true;
+      } catch (err) {
+        console.warn('[SleepAlarmModal] expo-av playback warning, attempting expo-audio fallback:', err);
       }
-    } catch (err) {
-      // Fallback: vibration-only if sound fails
-      console.warn('[SleepAlarmModal] Sound load failed, using vibration only:', err);
+    }
+
+    // 3. Secondary Mobile Fallback: expo-audio
+    if (!avSuccess && ExpoAudio) {
+      try {
+        if (typeof ExpoAudio.setAudioModeAsync === 'function') {
+          await ExpoAudio.setAudioModeAsync({
+            playsInSilentModeIOS: true,
+            staysActiveInBackground: true,
+            shouldDuckAndroid: false,
+            playThroughEarpieceAndroid: false,
+          }).catch(() => {});
+        }
+        if (ExpoAudio.createAudioPlayer) {
+          const player = ExpoAudio.createAudioPlayer(ALARM_SOUND_ASSET);
+          if (player) {
+            player.loop = true;
+            if (typeof player.volume !== 'undefined') player.volume = 1.0;
+            player.play();
+            soundExpoRef.current = player;
+          }
+        }
+      } catch (err) {
+        console.warn('[SleepAlarmModal] expo-audio fallback warning:', err);
+      }
     }
   }, []);
 
+  // ── Stop Audio Engine ───────────────────────────────────────────────────────
   const stopAlarmSound = useCallback(async () => {
-    if (soundRef.current) {
+    // Web
+    if (webIntervalRef.current) {
+      clearInterval(webIntervalRef.current);
+      webIntervalRef.current = null;
+    }
+
+    // expo-av
+    if (soundAvRef.current) {
       try {
-        if (typeof soundRef.current.pause === 'function') {
-          soundRef.current.pause();
+        await soundAvRef.current.stopAsync();
+        await soundAvRef.current.unloadAsync();
+      } catch (_) {}
+      soundAvRef.current = null;
+    }
+
+    // expo-audio
+    if (soundExpoRef.current) {
+      try {
+        if (typeof soundExpoRef.current.pause === 'function') {
+          soundExpoRef.current.pause();
         }
-        if (typeof soundRef.current.release === 'function') {
-          soundRef.current.release();
+        if (typeof soundExpoRef.current.release === 'function') {
+          soundExpoRef.current.release();
         }
       } catch (_) {}
-      soundRef.current = null;
+      soundExpoRef.current = null;
     }
   }, []);
 
-  // ── Vibration pattern ─────────────────────────────────────────────────────
+  // ── Vibration / Haptics Engine ──────────────────────────────────────────────
   const startVibration = useCallback(() => {
-    if (Platform.OS === 'android') {
-      // [wait, vibrate, wait, vibrate, ...] in ms
-      Vibration.vibrate([0, 400, 200, 400, 200, 400], true);
-    } else {
-      // iOS: simple pattern
-      const vibrateIOS = () => Vibration.vibrate();
-      vibrateIOS();
+    try {
+      if (Platform.OS === 'android') {
+        // Continuous repeating heavy pulse: [wait 0ms, vibrate 500ms, pause 200ms, vibrate 500ms...]
+        Vibration.vibrate([0, 500, 200, 500, 200, 500], true);
+      } else if (Platform.OS === 'ios') {
+        Vibration.vibrate();
+        if (iosVibrateTimer.current) clearInterval(iosVibrateTimer.current);
+        iosVibrateTimer.current = setInterval(() => {
+          Vibration.vibrate();
+        }, 1100);
+      } else {
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          navigator.vibrate([400, 200, 400]);
+        }
+      }
+    } catch (_) {}
+  }, []);
+
+  const stopVibration = useCallback(() => {
+    try {
+      Vibration.cancel();
+    } catch (_) {}
+    if (iosVibrateTimer.current) {
+      clearInterval(iosVibrateTimer.current);
+      iosVibrateTimer.current = null;
     }
   }, []);
 
-  // ── Animations ────────────────────────────────────────────────────────────
+  // ── Visual Animations ───────────────────────────────────────────────────────
   const startAnimations = useCallback(() => {
-    // Screen flash (red pulse)
+    // Background red pulse overlay
     flashLoop.current = Animated.loop(
       Animated.sequence([
         Animated.timing(flashAnim, {
-          toValue:         0.35,
+          toValue:         0.28,
           duration:        400,
           easing:          Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
         Animated.timing(flashAnim, {
-          toValue:         0.0,
-          duration:        500,
+          toValue:         0.04,
+          duration:        450,
           easing:          Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
@@ -127,26 +252,26 @@ export function SleepAlarmModal({ visible, onDismiss }) {
     );
     flashLoop.current.start();
 
-    // Modal entry animation
+    // Card entrance spring
     Animated.spring(scaleAnim, {
       toValue:         1,
-      tension:         80,
-      friction:        7,
+      tension:         100,
+      friction:        8,
       useNativeDriver: true,
     }).start();
 
-    // Button pulse
+    // Button attention pulse
     pulseLoop.current = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
-          toValue:         1.08,
-          duration:        600,
+          toValue:         1.03,
+          duration:        500,
           easing:          Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
         Animated.timing(pulseAnim, {
-          toValue:         1,
-          duration:        600,
+          toValue:         1.0,
+          duration:        500,
           easing:          Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
@@ -159,11 +284,11 @@ export function SleepAlarmModal({ visible, onDismiss }) {
     if (flashLoop.current) { flashLoop.current.stop(); flashLoop.current = null; }
     if (pulseLoop.current) { pulseLoop.current.stop(); pulseLoop.current = null; }
     flashAnim.setValue(0);
-    scaleAnim.setValue(0.8);
+    scaleAnim.setValue(0.92);
     pulseAnim.setValue(1);
   }, [flashAnim, scaleAnim, pulseAnim]);
 
-  // ── Lifecycle: start/stop based on visibility ─────────────────────────────
+  // ── Lifecycle on visibility change ──────────────────────────────────────────
   useEffect(() => {
     if (visible) {
       setSecondsActive(0);
@@ -171,20 +296,22 @@ export function SleepAlarmModal({ visible, onDismiss }) {
       startAlarmSound();
       startVibration();
 
-      // Counter for how long alarm has been active
       timerRef.current = setInterval(() => {
-        setSecondsActive(s => s + 1);
+        setSecondsActive((s) => s + 1);
       }, 1000);
     } else {
       stopAnimations();
       stopAlarmSound();
-      Vibration.cancel();
+      stopVibration();
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
     }
+
     return () => {
+      stopAlarmSound();
+      stopVibration();
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -192,13 +319,19 @@ export function SleepAlarmModal({ visible, onDismiss }) {
   const handleDismiss = useCallback(() => {
     stopAnimations();
     stopAlarmSound();
-    Vibration.cancel();
+    stopVibration();
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
     onDismiss?.();
-  }, [stopAnimations, stopAlarmSound, onDismiss]);
+  }, [stopAnimations, stopAlarmSound, stopVibration, onDismiss]);
+
+  const fmtSeconds = (s) => {
+    const mins = Math.floor(s / 60).toString().padStart(2, '0');
+    const secs = (s % 60).toString().padStart(2, '0');
+    return `${mins}:${secs}`;
+  };
 
   return (
     <Modal
@@ -208,56 +341,79 @@ export function SleepAlarmModal({ visible, onDismiss }) {
       statusBarTranslucent
       onRequestClose={handleDismiss}
     >
-      {/* Red flash overlay behind everything */}
+      {/* Red strobe ambient overlay */}
       <Animated.View
         style={[styles.flashOverlay, { opacity: flashAnim }]}
         pointerEvents="none"
       />
 
       <View style={styles.backdrop}>
-        {/* Main alarm card */}
         <Animated.View style={[styles.card, { transform: [{ scale: scaleAnim }] }]}>
 
-          {/* Warning icon strip */}
-          <View style={styles.iconStrip}>
-            <Text style={styles.warnIcon}>🚨</Text>
-            <Text style={styles.warnIcon}>⚠️</Text>
-            <Text style={styles.warnIcon}>🚨</Text>
+          {/* Top Overline & Shield Icon */}
+          <View style={styles.headerRow}>
+            <View style={styles.iconCircle}>
+              <Svg width={36} height={36} viewBox="0 0 24 24" fill="none">
+                <Path
+                  d="M12 2L3 6v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V6l-9-4z"
+                  stroke="#EF4444"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  fill="rgba(239, 68, 68, 0.14)"
+                />
+                <Path
+                  d="M12 8v5M12 16h.01"
+                  stroke="#EF4444"
+                  strokeWidth={2.5}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </Svg>
+            </View>
+            <View style={styles.categoryPill}>
+              <View style={styles.dotPulse} />
+              <Text style={styles.categoryText}>CRITICAL LEVEL 1</Text>
+            </View>
           </View>
 
-          {/* Title */}
+          {/* Main Emergency Title */}
           <Text style={styles.title}>MICROSLEEP DETECTED</Text>
 
-          {/* Subtitle */}
+          {/* Safety instructions */}
           <Text style={styles.subtitle}>
-            You have fallen asleep!{'\n'}Pull over immediately and rest.
+            Prolonged eye closure detected by vision telemetry. Maintain steering control and bring the vehicle to an immediate safe stop.
           </Text>
 
-          {/* Duration indicator */}
-          <View style={styles.durationBadge}>
-            <Text style={styles.durationLabel}>ALARM ACTIVE FOR</Text>
-            <Text style={styles.durationValue}>{secondsActive}s</Text>
+          {/* Telemetry Active Duration Badge */}
+          <View style={styles.telemetryBadge}>
+            <View style={styles.telemetryHeader}>
+              <Text style={styles.telemetryLabel}>SIREN ACTIVE</Text>
+              <Text style={styles.telemetryRate}>100% VOLUME</Text>
+            </View>
+            <Text style={styles.durationValue}>{fmtSeconds(secondsActive)}</Text>
           </View>
 
-          {/* Separator */}
-          <View style={styles.separator} />
-
-          {/* STOP ALARM button */}
+          {/* High-Contrast Automotive DISMISS ALARM Action */}
           <Animated.View style={{ transform: [{ scale: pulseAnim }], width: '100%' }}>
             <TouchableOpacity
-              style={styles.stopBtn}
+              style={styles.dismissBtn}
               onPress={handleDismiss}
-              activeOpacity={0.85}
+              activeOpacity={0.88}
             >
-              <Text style={styles.stopBtnIcon}>🛑</Text>
-              <Text style={styles.stopBtnText}>STOP ALARM</Text>
+              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={2.4}>
+                <Path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
+              </Svg>
+              <Text style={styles.dismissBtnText}>DISMISS ALARM</Text>
             </TouchableOpacity>
           </Animated.View>
 
-          {/* Safety note */}
-          <Text style={styles.safetyNote}>
-            Find a safe place to stop and rest before continuing to drive.
-          </Text>
+          {/* Safety Protocol Note */}
+          <View style={styles.footerNoteWrap}>
+            <Text style={styles.safetyNote}>
+              SAFETY PROTOCOL: Find the nearest exit or rest area. Do not attempt to continue driving while drowsy.
+            </Text>
+          </View>
 
         </Animated.View>
       </View>
@@ -273,119 +429,142 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.88)',
+    backgroundColor: 'rgba(0, 0, 0, 0.92)',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
     zIndex: 1,
   },
   card: {
-    backgroundColor: '#0F0A0A',
-    borderWidth: 2,
+    backgroundColor: '#0A0A0A',
+    borderWidth: 1.5,
     borderColor: '#EF4444',
-    borderRadius: 24,
-    paddingVertical: 32,
-    paddingHorizontal: 24,
+    borderRadius: 8,
+    paddingVertical: 28,
+    paddingHorizontal: 22,
     alignItems: 'center',
     width: '100%',
-    maxWidth: 380,
-    // Red glow
-    shadowColor: '#EF4444',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 30,
-    elevation: 20,
+    maxWidth: 390,
   },
-  iconStrip: {
-    flexDirection: 'row',
+  headerRow: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    marginBottom: 16,
     gap: 12,
-    marginBottom: 20,
   },
-  warnIcon: {
-    fontSize: 36,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: '#EF4444',
-    letterSpacing: 1.5,
-    textAlign: 'center',
-    marginBottom: 14,
-    textShadowColor: 'rgba(239, 68, 68, 0.6)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 12,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: '#F1F5F9',
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 20,
-    opacity: 0.9,
-  },
-  durationBadge: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+  iconCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#110606',
     borderWidth: 1,
     borderColor: 'rgba(239, 68, 68, 0.4)',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 28,
     alignItems: 'center',
-    marginBottom: 20,
+    justifyContent: 'center',
   },
-  durationLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#EF4444',
-    letterSpacing: 2,
-    marginBottom: 4,
-    opacity: 0.8,
+  categoryPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 999,
   },
-  durationValue: {
-    fontSize: 32,
+  dotPulse: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#EF4444',
+  },
+  categoryText: {
+    fontSize: 9,
     fontWeight: '900',
     color: '#EF4444',
-    letterSpacing: -0.5,
+    letterSpacing: 2,
   },
-  separator: {
+  title: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 1.8,
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  subtitle: {
+    fontSize: 13,
+    color: '#A3A3A3',
+    textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: 20,
+    paddingHorizontal: 6,
+  },
+  telemetryBadge: {
+    backgroundColor: '#111111',
+    borderWidth: 1,
+    borderColor: '#262626',
+    borderRadius: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
     width: '100%',
-    height: 1,
-    backgroundColor: 'rgba(239, 68, 68, 0.25)',
+    alignItems: 'center',
     marginBottom: 22,
   },
-  stopBtn: {
+  telemetryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 4,
+  },
+  telemetryLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#EF4444',
+    letterSpacing: 1.5,
+  },
+  telemetryRate: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#666666',
+    letterSpacing: 1,
+  },
+  durationValue: {
+    fontSize: 34,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    letterSpacing: 1,
+  },
+  dismissBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#EF4444',
-    borderRadius: 16,
-    paddingVertical: 18,
-    paddingHorizontal: 32,
+    borderRadius: 4,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
     gap: 10,
-    // Inner glow
-    shadowColor: '#EF4444',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.7,
-    shadowRadius: 16,
-    elevation: 12,
     width: '100%',
+    borderWidth: 1,
+    borderColor: '#FF6B6B',
   },
-  stopBtnIcon: {
-    fontSize: 22,
-  },
-  stopBtnText: {
-    fontSize: 20,
+  dismissBtnText: {
+    fontSize: 14,
     fontWeight: '900',
     color: '#FFFFFF',
-    letterSpacing: 2,
+    letterSpacing: 2.5,
+  },
+  footerNoteWrap: {
+    marginTop: 18,
+    paddingHorizontal: 6,
   },
   safetyNote: {
-    fontSize: 11,
-    color: '#94A3B8',
+    fontSize: 10,
+    color: '#555555',
     textAlign: 'center',
-    marginTop: 18,
-    lineHeight: 16,
-    paddingHorizontal: 8,
-    opacity: 0.7,
+    lineHeight: 15,
+    letterSpacing: 0.3,
   },
 });

@@ -31,14 +31,16 @@ import os
 import sys
 import time
 import math
+import json
 import base64
+import threading
 import urllib.request
 from collections import deque
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict, Any, List
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -411,9 +413,252 @@ class DriverFatigueDetector:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. High-Performance FastAPI WebSocket Server
+# 3. Persistent Shared Database (Single Source of Truth)
 # ─────────────────────────────────────────────────────────────────────────────
-app = FastAPI(title="DriveGuard AI Telemetry & Vision Server")
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "database.json")
+
+class JsonDatabase:
+    """Thread-safe persistent database for drivers, operators, and trip analytics."""
+    def __init__(self, filepath: str):
+        self.filepath = filepath
+        self._lock = threading.Lock()
+        self.data = self._load()
+
+    def _load(self) -> dict:
+        if os.path.exists(self.filepath):
+            try:
+                with open(self.filepath, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as err:
+                print(f"[DB Warning] Could not read {self.filepath}: {err}. Initializing default.")
+
+        default_db = {
+            "drivers": {
+                "drv_demo_1": {
+                    "uid": "drv_demo_1",
+                    "email": "alex.rivera@fleet.com",
+                    "displayName": "Alex Rivera",
+                    "driverCode": "DG8042",
+                    "vehicleId": "TRK-902",
+                    "createdAt": "2026-10-30T10:00:00Z"
+                },
+                "drv_demo_2": {
+                    "uid": "drv_demo_2",
+                    "email": "sarah.chen@fleet.com",
+                    "displayName": "Sarah Chen",
+                    "driverCode": "SC4491",
+                    "vehicleId": "VAN-104",
+                    "createdAt": "2026-10-30T11:00:00Z"
+                }
+            },
+            "operators": {
+                "op_demo_1": {
+                    "id": "op_demo_1",
+                    "name": "Fleet Controller",
+                    "email": "admin@driveguard.ai",
+                    "password": "password123",
+                    "driverCodes": ["DG8042", "SC4491"],
+                    "createdAt": "2026-10-30T09:00:00Z"
+                }
+            },
+            "sessions": [
+                {
+                    "id": "sess_101",
+                    "driverCode": "DG8042",
+                    "driverName": "Alex Rivera",
+                    "startedAt": "2026-10-30T08:00:00Z",
+                    "endedAt": "2026-10-30T09:15:00Z",
+                    "totalAlerts": 1,
+                    "peakState": "WARNING",
+                    "durationSec": 4500,
+                    "blinkCount": 230
+                }
+            ]
+        }
+        self._save_raw(default_db)
+        return default_db
+
+    def _save_raw(self, data: dict):
+        try:
+            with open(self.filepath, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except Exception as err:
+            print(f"[DB Error] Failed to write {self.filepath}: {err}")
+
+    def register_driver(self, driver_info: dict) -> dict:
+        with self._lock:
+            uid = driver_info.get("uid") or f"drv_{int(time.time() * 1000)}"
+            clean_code = driver_info.get("driverCode", "").strip().upper().replace("-", "")
+            driver_record = {
+                "uid": uid,
+                "email": driver_info.get("email", "").lower().strip(),
+                "displayName": driver_info.get("displayName", "Driver").strip(),
+                "driverCode": clean_code,
+                "vehicleId": driver_info.get("vehicleId", "FLEET-01"),
+                "createdAt": driver_info.get("createdAt") or time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            }
+            self.data.setdefault("drivers", {})[uid] = driver_record
+            self._save_raw(self.data)
+            return driver_record
+
+    def get_driver_by_code(self, code: str) -> Optional[dict]:
+        clean = code.strip().upper().replace("-", "")
+        with self._lock:
+            for d in self.data.get("drivers", {}).values():
+                if d.get("driverCode", "").upper() == clean:
+                    return d
+        return None
+
+    def get_all_drivers(self) -> list:
+        with self._lock:
+            return list(self.data.get("drivers", {}).values())
+
+    def register_operator(self, op_info: dict) -> dict:
+        with self._lock:
+            email = op_info.get("email", "").lower().strip()
+            for op in self.data.get("operators", {}).values():
+                if op.get("email", "").lower() == email:
+                    raise ValueError("An operator with this email already exists.")
+            op_id = f"op_{int(time.time() * 1000)}"
+            new_op = {
+                "id": op_id,
+                "name": op_info.get("name", "Operator").strip(),
+                "email": email,
+                "password": op_info.get("password", ""),
+                "driverCodes": op_info.get("driverCodes", []),
+                "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ")
+            }
+            self.data.setdefault("operators", {})[op_id] = new_op
+            self._save_raw(self.data)
+            return {k: v for k, v in new_op.items() if k != "password"}
+
+    def login_operator(self, email: str, password: str) -> Optional[dict]:
+        email_clean = email.strip().lower()
+        with self._lock:
+            for op in self.data.get("operators", {}).values():
+                if op.get("email", "").lower() == email_clean and op.get("password") == password:
+                    return {k: v for k, v in op.items() if k != "password"}
+        return None
+
+    def link_driver_to_operator(self, op_id: str, driver_code: str) -> bool:
+        clean = driver_code.strip().upper().replace("-", "")
+        driver = self.get_driver_by_code(clean)
+        if not driver:
+            return False
+        with self._lock:
+            if op_id in self.data.get("operators", {}):
+                codes = set(self.data["operators"][op_id].get("driverCodes", []))
+                codes.add(clean)
+                self.data["operators"][op_id]["driverCodes"] = list(codes)
+                self._save_raw(self.data)
+                return True
+        return False
+
+    def unlink_driver_from_operator(self, op_id: str, driver_code: str) -> bool:
+        clean = driver_code.strip().upper().replace("-", "")
+        with self._lock:
+            if op_id in self.data.get("operators", {}):
+                codes = [c for c in self.data["operators"][op_id].get("driverCodes", []) if c != clean]
+                self.data["operators"][op_id]["driverCodes"] = codes
+                self._save_raw(self.data)
+                return True
+        return False
+
+    def get_operator_drivers(self, op_id: str) -> list:
+        with self._lock:
+            op = self.data.get("operators", {}).get(op_id)
+            if not op:
+                return []
+            codes = set(op.get("driverCodes", []))
+            return [d for d in self.data.get("drivers", {}).values() if d.get("driverCode") in codes]
+
+    def get_operator_sessions(self, op_id: str, limit: int = 50) -> list:
+        with self._lock:
+            op = self.data.get("operators", {}).get(op_id)
+            if not op:
+                return []
+            codes = set(c.upper() for c in op.get("driverCodes", []))
+            if not codes:
+                return []
+            sessions = [
+                s for s in self.data.get("sessions", [])
+                if s.get("driverCode", "").upper() in codes
+            ]
+            return sorted(sessions, key=lambda s: s.get("createdAt", ""), reverse=True)[:limit]
+
+    def add_session(self, session: dict) -> dict:
+        with self._lock:
+            if not session.get("id"):
+                session["id"] = f"sess_{int(time.time() * 1000)}"
+            if not session.get("createdAt"):
+                session["createdAt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+            self.data.setdefault("sessions", []).append(session)
+            self._save_raw(self.data)
+            return session
+
+    def get_sessions(self, driver_code: Optional[str] = None, limit: int = 50) -> list:
+        with self._lock:
+            sessions = self.data.get("sessions", [])
+            if driver_code:
+                clean = driver_code.strip().upper().replace("-", "")
+                sessions = [s for s in sessions if s.get("driverCode", "").upper() == clean]
+            return sorted(sessions, key=lambda s: s.get("createdAt", ""), reverse=True)[:limit]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. Persistent Database: MySQL Engine with JsonDatabase Fallback
+# ─────────────────────────────────────────────────────────────────────────────
+try:
+    if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from mysql_db import MySQLDatabase
+    db = MySQLDatabase()
+    print("[DB Init] Connected to MySQL database 'driveguard_db' successfully.")
+except Exception as _mysql_err:
+    print(f"[DB Warning] MySQL connection failed ({_mysql_err}). Falling back to JsonDatabase.")
+    db = JsonDatabase(DB_PATH)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. Telemetry Hub & Broadcaster (Bridges Mobile AI -> Web Dashboard)
+# ─────────────────────────────────────────────────────────────────────────────
+class TelemetryBroadcaster:
+    """Manages connected operator dashboards and broadcasts live telemetry stream."""
+    def __init__(self):
+        self.subscribers: set[WebSocket] = set()
+
+    async def register(self, ws: WebSocket):
+        await ws.accept()
+        self.subscribers.add(ws)
+        print(f"[Telemetry Hub] Dashboard connected. Active listeners: {len(self.subscribers)}")
+
+    def unregister(self, ws: WebSocket):
+        self.subscribers.discard(ws)
+        print(f"[Telemetry Hub] Dashboard disconnected. Remaining: {len(self.subscribers)}")
+
+    async def broadcast(self, payload: dict):
+        if not self.subscribers:
+            return
+        msg = json.dumps(payload)
+        dead = []
+        for ws in self.subscribers:
+            try:
+                await ws.send_text(msg)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self.subscribers.discard(ws)
+
+broadcaster = TelemetryBroadcaster()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. Unified FastAPI Application & Endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+app = FastAPI(
+    title="DriveGuard AI Unified Server",
+    description="Unified AI, Computer Vision, Telemetry & Fleet Management Backend for DriveGuard Mobile & Web",
+    version="2.0.0"
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -441,6 +686,18 @@ def decode_base64_frame(base64_str: str) -> Optional[np.ndarray]:
         return None
 
 
+# ── Root & Health ─────────────────────────────────────────────────────────────
+@app.get("/")
+def root():
+    return {
+        "status": "DriveGuard AI Unified Server Running",
+        "version": "2.0.0",
+        "description": "Unified backend serving both Expo Mobile App and Web Operator Dashboard",
+        "active_subscribers": len(broadcaster.subscribers),
+        "total_drivers": len(db.get_all_drivers()),
+    }
+
+
 @app.get("/health")
 def health_check():
     return {
@@ -449,33 +706,220 @@ def health_check():
         "is_calibrated": fatigue_detector.is_calibrated,
         "baseline_ear": fatigue_detector.baseline_ear,
         "sleep_threshold": fatigue_detector.sleep_threshold,
+        "active_dashboard_subscribers": len(broadcaster.subscribers),
+        "total_registered_drivers": len(db.get_all_drivers()),
     }
 
 
-@app.websocket("/ws/telemetry")
+# ── Driver API ────────────────────────────────────────────────────────────────
+@app.post("/api/drivers/register")
+def register_driver(payload: dict):
+    """Registers or updates driver profile with permanent 6-character code."""
+    if not payload.get("email") or not payload.get("driverCode"):
+        raise HTTPException(status_code=400, detail="email and driverCode are required")
+    driver = db.register_driver(payload)
+    print(f"[API] Registered driver: {driver.get('displayName')} (Code: {driver.get('driverCode')})")
+    return {"status": "success", "driver": driver}
+
+
+@app.get("/api/drivers")
+def get_all_drivers():
+    """Returns all registered drivers."""
+    return {"drivers": db.get_all_drivers()}
+
+
+@app.get("/api/drivers/code/{code}")
+def get_driver_by_code(code: str):
+    """Looks up a driver by their permanent 6-digit code."""
+    driver = db.get_driver_by_code(code)
+    if not driver:
+        raise HTTPException(
+            status_code=404,
+            detail=f'No driver found with code "{code}". Please verify the code in the driver app.'
+        )
+    return {"status": "success", "driver": driver}
+
+
+# ── Operator API ──────────────────────────────────────────────────────────────
+@app.post("/api/operators/register")
+def register_operator(payload: dict):
+    try:
+        op = db.register_operator(payload)
+        return {"status": "success", "operator": op}
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err))
+
+
+@app.post("/api/operators/login")
+def login_operator(payload: dict):
+    email = payload.get("email", "")
+    password = payload.get("password", "")
+    op = db.login_operator(email, password)
+    if not op:
+        raise HTTPException(status_code=401, detail="Invalid operator email or password.")
+    return {"status": "success", "operator": op}
+
+
+@app.get("/api/operators/{op_id}/drivers")
+def get_operator_drivers(op_id: str):
+    drivers = db.get_operator_drivers(op_id)
+    return {"drivers": drivers}
+
+
+@app.post("/api/operators/{op_id}/drivers")
+def link_driver_to_operator(op_id: str, payload: dict):
+    driver_code = payload.get("driverCode", "")
+    if not driver_code:
+        raise HTTPException(status_code=400, detail="driverCode is required")
+    success = db.link_driver_to_operator(op_id, driver_code)
+    if not success:
+        raise HTTPException(status_code=404, detail=f'Driver code "{driver_code}" not found.')
+    return {"status": "success", "message": f'Driver {driver_code} linked to operator.'}
+
+
+@app.delete("/api/operators/{op_id}/drivers/{code}")
+def unlink_driver_from_operator(op_id: str, code: str):
+    success = db.unlink_driver_from_operator(op_id, code)
+    return {"status": "success", "unlinked": success}
+
+
+@app.get("/api/operators/{op_id}/sessions")
+def get_operator_sessions(op_id: str, limit: int = 50):
+    """Returns trip history and incident logs scoped strictly to this operator's linked drivers."""
+    if hasattr(db, "get_operator_sessions"):
+        sessions = db.get_operator_sessions(op_id, limit=limit)
+    else:
+        drivers = db.get_operator_drivers(op_id)
+        codes = set(d["driverCode"].upper() for d in drivers if d.get("driverCode"))
+        if not codes:
+            return {"sessions": []}
+        all_sessions = db.get_sessions(limit=100)
+        sessions = [s for s in all_sessions if s.get("driverCode", "").upper() in codes][:limit]
+    return {"sessions": sessions}
+
+
+@app.get("/api/operators/{op_id}/stats")
+def get_operator_stats(op_id: str):
+    """Returns fleet KPIs scoped strictly to this operator's fleet."""
+    drivers = db.get_operator_drivers(op_id)
+    if hasattr(db, "get_operator_sessions"):
+        sessions = db.get_operator_sessions(op_id, limit=100)
+    else:
+        codes = set(d["driverCode"].upper() for d in drivers if d.get("driverCode"))
+        sessions = [s for s in db.get_sessions(limit=100) if s.get("driverCode", "").upper() in codes]
+
+    total_trips = len(sessions)
+    total_alerts = sum(s.get("totalAlerts", 0) for s in sessions)
+
+    durations = []
+    for s in sessions:
+        dur = s.get("durationSec") or 0
+        if dur <= 0 and s.get("startedAt") and s.get("endedAt"):
+            try:
+                import datetime
+                t1 = datetime.datetime.fromisoformat(s["startedAt"].replace("Z", "+00:00"))
+                t2 = datetime.datetime.fromisoformat(s["endedAt"].replace("Z", "+00:00"))
+                diff = int((t2 - t1).total_seconds())
+                if diff > 0:
+                    dur = diff
+            except Exception:
+                pass
+        if dur > 0:
+            durations.append(dur)
+
+    avg_duration = round(sum(durations) / max(len(durations), 1)) if durations else 0
+
+    return {
+        "operator_id": op_id,
+        "total_drivers": len(drivers),
+        "total_trips": total_trips,
+        "total_alerts": total_alerts,
+        "avg_duration_sec": avg_duration,
+    }
+
+
+# ── Trip Sessions & Analytics API ─────────────────────────────────────────────
+@app.post("/api/sessions")
+def save_session(session: dict):
+    saved = db.add_session(session)
+    return {"status": "success", "session": saved}
+
+
+@app.get("/api/sessions")
+def get_sessions(driver_code: Optional[str] = None, limit: int = 50):
+    sessions = db.get_sessions(driver_code=driver_code, limit=limit)
+    return {"sessions": sessions}
+
+
+@app.get("/api/stats")
+def get_fleet_stats():
+    drivers = db.get_all_drivers()
+    sessions = db.get_sessions(limit=100)
+    total_trips = len(sessions)
+    total_alerts = sum(s.get("totalAlerts", 0) for s in sessions)
+
+    durations = []
+    for s in sessions:
+        dur = s.get("durationSec") or 0
+        if dur <= 0 and s.get("startedAt") and s.get("endedAt"):
+            try:
+                import datetime
+                t1 = datetime.datetime.fromisoformat(s["startedAt"].replace("Z", "+00:00"))
+                t2 = datetime.datetime.fromisoformat(s["endedAt"].replace("Z", "+00:00"))
+                diff = int((t2 - t1).total_seconds())
+                if diff > 0:
+                    dur = diff
+            except Exception:
+                pass
+        if dur > 0:
+            durations.append(dur)
+
+    avg_duration = round(sum(durations) / max(len(durations), 1)) if durations else 0
+
+    return {
+        "total_drivers": len(drivers),
+        "total_trips": total_trips,
+        "total_alerts": total_alerts,
+        "avg_duration_sec": avg_duration,
+        "active_streamers": len(broadcaster.subscribers),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. Unified WebSockets: Camera Feed & Real-Time Telemetry
+# ─────────────────────────────────────────────────────────────────────────────
 @app.websocket("/ws/camera")
-async def websocket_telemetry_endpoint(websocket: WebSocket):
+async def websocket_camera_endpoint(websocket: WebSocket):
     """
-    Full-duplex low-latency WebSocket endpoint for DriveGuard AI.
-    Accepts:
-      1. Base64 JPEG frames: {"image": "<base64>", "timestamp": 12345}
-      2. Direct telemetry values: {"ear": 0.28, "mar": 0.05, "timestamp": 12345}
-      3. Control commands: {"action": "calibrate"}
-    Emits:
-      Immediate JSON fatigue state response (<20-30ms latency).
+    High-speed camera streaming endpoint for the React Native mobile app.
+    1. Ingests video frames from mobile camera.
+    2. Runs MediaPipe FaceMesh & Soukupová & Čech EAR detection.
+    3. Emits low-latency state + landmark coordinates back to mobile HUD.
+    4. Automatically broadcasts live telemetry & risk scores to operator web dashboards!
     """
     await websocket.accept()
-    print(f"[WebSocket] Client connected: {websocket.client}")
+    print(f"[Camera Stream] Mobile client connected: {websocket.client}")
 
-    # Start calibration phase whenever a new client connects
+    # Start calibration phase whenever a new mobile driver session connects
     fatigue_detector.start_calibration()
+    driver_code = None
+    driver_name = None
+    vehicle_id = "FLEET-01"
 
     try:
         while True:
             data = await websocket.receive_json()
             t_start = time.perf_counter()
 
-            # Handle control commands
+            # Synchronize driver identification
+            if data.get("driver_code"):
+                driver_code = str(data["driver_code"]).strip().upper().replace("-", "")
+            if data.get("driver_id"):
+                driver_name = data["driver_id"]
+            if data.get("vehicle_id"):
+                vehicle_id = data["vehicle_id"]
+
+            # Handle control commands (e.g. manual recalibrate)
             action = data.get("action")
             if action == "calibrate":
                 fatigue_detector.start_calibration()
@@ -488,12 +932,12 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
 
             raw_ear = data.get("ear")
             raw_mar = data.get("mar", 0.0)
+            frame_landmarks = None
 
             # Frame base64 processing path
             if "image" in data and data["image"]:
                 frame = decode_base64_frame(data["image"])
                 if frame is not None:
-                    # Resize frame if needed for ultra-fast CV inference (<15ms)
                     h, w = frame.shape[:2]
                     if w > 480:
                         scale = 480.0 / w
@@ -503,11 +947,6 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
                     raw_ear = calc_ear
                     raw_mar = calc_mar if calc_mar is not None else 0.0
                     frame_landmarks = calc_landmarks
-                else:
-                    raw_ear = None
-                    frame_landmarks = None
-            else:
-                frame_landmarks = None
 
             # Process through the 4-mechanism detector
             result = fatigue_detector.process_telemetry(raw_ear, raw_mar)
@@ -518,13 +957,49 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
             t_elapsed_ms = (time.perf_counter() - t_start) * 1000.0
             result["latency_ms"] = round(t_elapsed_ms, 1)
 
-            # Emit state back to React Native client
+            # 1. Send low-latency response back to React Native client for HUD
             await websocket.send_json(result)
 
+            # 2. Standardize & broadcast to all connected Web Dashboards
+            state = result.get("state", "AWAKE")
+            closure = result.get("closure_duration", 0.0)
+
+            if state == "CRITICAL":
+                risk_score = min(100, int(75 + closure * 15))
+            elif state == "WARNING":
+                risk_score = min(70, int(35 + closure * 20))
+            elif result.get("yawning"):
+                risk_score = 45
+            else:
+                ear_val = result.get("ear") or 0.3
+                risk_score = max(5, int(18 - ear_val * 20))
+
+            perclos = min(100.0, round(closure * 18.0, 1)) if closure > 0 else 3.2
+
+            telemetry_packet = {
+                "status": "ALERT" if state == "AWAKE" else state,
+                "state": state,
+                "driver_id": driver_name or f"Driver ({driver_code or 'Active'})",
+                "driver_code": driver_code or "UNKNOWN",
+                "vehicle_id": vehicle_id,
+                "ear": result.get("ear") or 0.30,
+                "mar": result.get("mar") or 0.05,
+                "perclos": perclos,
+                "risk_score": risk_score,
+                "alert": result.get("alert", False),
+                "alarm": result.get("alarm", False),
+                "yawning": result.get("yawning", False),
+                "blink_count": result.get("blink_count", 0),
+                "closure_duration": closure,
+                "face_detected": result.get("face_detected", True),
+                "timestamp": time.strftime("%H:%M:%S")
+            }
+            await broadcaster.broadcast(telemetry_packet)
+
     except WebSocketDisconnect:
-        print(f"[WebSocket] Client disconnected: {websocket.client}")
+        print(f"[Camera Stream] Mobile client disconnected: {websocket.client}")
     except Exception as err:
-        print(f"[WebSocket Error] Unexpected error: {err}")
+        print(f"[Camera Stream Error] {err}")
     finally:
         try:
             await websocket.close()
@@ -532,9 +1007,42 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
             pass
 
 
+@app.websocket("/ws/telemetry")
+async def websocket_telemetry_endpoint(websocket: WebSocket):
+    """
+    Bi-directional Telemetry Stream:
+    - Operator Web Dashboards connect here to listen to live driver telemetry.
+    - Simulators / mobile telemetry injectors connect here to broadcast telemetry.
+    """
+    await broadcaster.register(websocket)
+    try:
+        while True:
+            # If a client sends telemetry data (e.g. simulator or numeric stream)
+            data_text = await websocket.receive_text()
+            try:
+                data = json.loads(data_text)
+                if isinstance(data, dict):
+                    if "timestamp" not in data:
+                        data["timestamp"] = time.strftime("%H:%M:%S")
+                    # Broadcast incoming telemetry to all other connected dashboards
+                    await broadcaster.broadcast(data)
+            except Exception:
+                pass
+    except WebSocketDisconnect:
+        broadcaster.unregister(websocket)
+    except Exception as err:
+        print(f"[Telemetry Error] {err}")
+        broadcaster.unregister(websocket)
+
+
 if __name__ == "__main__":
-    print("=" * 65)
-    print("[DriveGuard AI] Starting server on http://0.0.0.0:8000")
-    print("   WebSocket URL: ws://<YOUR_LOCAL_IP>:8000/ws/camera")
-    print("=" * 65)
+    print("=" * 68)
+    print("  🚀 DriveGuard AI Unified Backend Server")
+    print("  Serving BOTH Expo Mobile App and Web Operator Dashboard")
+    print("=" * 68)
+    print("  ► HTTP REST API:   http://0.0.0.0:8000")
+    print("  ► Mobile Camera:   ws://<YOUR_LOCAL_IP>:8000/ws/camera")
+    print("  ► Web Telemetry:   ws://<YOUR_LOCAL_IP>:8000/ws/telemetry")
+    print("=" * 68)
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+

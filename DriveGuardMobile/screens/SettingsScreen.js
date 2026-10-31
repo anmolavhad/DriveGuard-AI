@@ -17,10 +17,13 @@ import {
   Switch,
   Platform,
   Alert,
+  Clipboard,
+  Animated,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../context/AuthContext';
+import { SleepAlarmModal } from '../components/SleepAlarmModal';
 
 const IP_KEY = '@driveguard_server_ip';
 
@@ -215,11 +218,126 @@ const avStyles = StyleSheet.create({
   check: { width: 8, height: 8, borderRadius: 999, backgroundColor: '#FFFFFF' },
 });
 
+// ─── Driver Code Badge ────────────────────────────────────────────────────────
+function DriverCodeBadge({ code }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    if (code) {
+      Clipboard.setString(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }, [code]);
+
+  if (!code) return null;
+
+  // Format code as XXX-XXX for readability
+  const formatted = `${code.slice(0, 3)}-${code.slice(3)}`;
+
+  return (
+    <View style={codeStyles.wrap}>
+      <View style={codeStyles.header}>
+        <Text style={codeStyles.label}>YOUR DRIVER CODE</Text>
+        <Text style={codeStyles.hint}>Share with operator to link your account</Text>
+      </View>
+      <TouchableOpacity style={codeStyles.badgeRow} onPress={handleCopy} activeOpacity={0.7}>
+        <View style={codeStyles.codeBox}>
+          {code.split('').map((ch, i) => (
+            <View key={i} style={[codeStyles.charBox, i === 2 && codeStyles.charBoxGap]}>
+              <Text style={codeStyles.charText}>{ch}</Text>
+            </View>
+          ))}
+        </View>
+        <View style={[codeStyles.copyBtn, copied && codeStyles.copyBtnActive]}>
+          <Text style={[codeStyles.copyText, copied && codeStyles.copyTextActive]}>
+            {copied ? 'COPIED!' : 'COPY'}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const codeStyles = StyleSheet.create({
+  wrap: {
+    borderWidth: 1,
+    borderColor: '#1A1A1A',
+    padding: 16,
+    marginBottom: 8,
+    gap: 12,
+    backgroundColor: '#050505',
+  },
+  header: { gap: 2 },
+  label: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#555555',
+    letterSpacing: 3,
+  },
+  hint: {
+    fontSize: 10,
+    color: '#2A2A2A',
+    fontWeight: '500',
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  codeBox: {
+    flexDirection: 'row',
+    gap: 4,
+    flex: 1,
+  },
+  charBox: {
+    flex: 1,
+    height: 44,
+    borderWidth: 1,
+    borderColor: '#222222',
+    backgroundColor: '#0A0A0A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  charBoxGap: {
+    marginRight: 8,
+  },
+  charText: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
+    fontVariant: ['tabular-nums'],
+  },
+  copyBtn: {
+    borderWidth: 1,
+    borderColor: '#222222',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 999,
+    backgroundColor: '#000000',
+  },
+  copyBtnActive: {
+    borderColor: '#22C55E55',
+    backgroundColor: 'rgba(34,197,94,0.08)',
+  },
+  copyText: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#444444',
+    letterSpacing: 2,
+  },
+  copyTextActive: {
+    color: '#22C55E',
+  },
+});
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export function SettingsScreen() {
   const { user, signOut } = useAuth();
   const [editProfileVisible, setEditProfileVisible] = useState(false);
   const [alertVolumeVisible, setAlertVolumeVisible] = useState(false);
+  const [testAlarmVisible, setTestAlarmVisible]     = useState(false);
   const [alertVolume, setAlertVolume]               = useState('High');
   const [vibrationEnabled, setVibrationEnabled]     = useState(true);
   const [autoCalibrate, setAutoCalibrate]           = useState(true);
@@ -274,6 +392,10 @@ export function SettingsScreen() {
           </View>
         </View>
 
+        {/* ── Driver Code ── */}
+        <SectionHeader label="DRIVER IDENTITY" />
+        <DriverCodeBadge code={user?.driverCode} />
+
         {/* ── Account ── */}
         <SectionHeader label="ACCOUNT" />
         <SettingRow label="Edit Profile"        onPress={() => setEditProfileVisible(true)} />
@@ -296,6 +418,12 @@ export function SettingsScreen() {
           toggle
           toggleValue={vibrationEnabled}
           onToggle={setVibrationEnabled}
+        />
+        <SettingRow
+          label="Test Emergency Siren"
+          value="Test Sound & Vibration"
+          accent
+          onPress={() => setTestAlarmVisible(true)}
         />
 
         {/* ── Detection ── */}
@@ -341,6 +469,10 @@ export function SettingsScreen() {
         currentVolume={alertVolume}
         onClose={() => setAlertVolumeVisible(false)}
         onSave={setAlertVolume}
+      />
+      <SleepAlarmModal
+        visible={testAlarmVisible}
+        onDismiss={() => setTestAlarmVisible(false)}
       />
     </View>
   );

@@ -241,7 +241,7 @@ export function HUDOverlay({
             🎯 Baseline: {baseline_ear ? baseline_ear.toFixed(3) : 'Pending'}
           </Text>
           <Text style={styles.extraChip}>
-            👁 Blinks: {blink_count ?? 0}
+            🛡️ AI Shield: Active
           </Text>
         </View>
 

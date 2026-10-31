@@ -46,10 +46,14 @@ const stateLabel = (s) => {
 };
 
 const formatDuration = (sec) => {
-  if (!sec) return '0s';
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+  if (!sec || sec <= 0) return '0s';
+  const s = Math.round(Number(sec));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const remainderSec = s % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${remainderSec}s`;
+  return `${remainderSec}s`;
 };
 
 const formatDate = (iso) => {
@@ -135,8 +139,10 @@ function SessionCard({ session }) {
           </View>
           <View style={sessStyles.statDivider} />
           <View style={sessStyles.stat}>
-            <Text style={sessStyles.statVal}>{session.blinkCount ?? '—'}</Text>
-            <Text style={sessStyles.statLabel}>BLINKS</Text>
+            <Text style={[sessStyles.statVal, { color: stateColor(session.peakState) }]}>
+              {stateLabel(session.peakState)}
+            </Text>
+            <Text style={sessStyles.statLabel}>PEAK RISK</Text>
           </View>
         </View>
       </View>

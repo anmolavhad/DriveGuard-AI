@@ -19,6 +19,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator }   from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider }           from 'react-native-safe-area-context';
 import { StatusBar }                  from 'expo-status-bar';
+import Svg, { Path }                  from 'react-native-svg';
 
 import { AuthProvider, useAuth }  from './context/AuthContext';
 import { AuthScreen }             from './screens/AuthScreen';
@@ -32,32 +33,61 @@ import { SleepAlarmModal }        from './components/SleepAlarmModal';
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
 
-// ─── Pure B&W tab icon renderer ───────────────────────────────────────────────
+// ─── Precision Automotive Tab Icons (Icon-Only Minimalist) ───────────────────
 function TabIcon({ label, focused }) {
-  const icons = {
-    Home:      focused ? '◆' : '◇',
-    Analytics: focused ? '▣' : '□',
-    History:   focused ? '≡' : '≡',
-    Settings:  focused ? '◉' : '○',
-  };
+  const color = focused ? '#FFFFFF' : '#666666';
+  const strokeWidth = focused ? 2.3 : 1.7;
+
+  let iconNode = null;
+  if (label === 'Home') {
+    iconNode = (
+      <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth}>
+        <Path
+          d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1V9.5z"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill={focused ? 'rgba(255,255,255,0.14)' : 'none'}
+        />
+      </Svg>
+    );
+  } else if (label === 'Analytics') {
+    iconNode = (
+      <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth}>
+        <Path d="M18 20V10M12 20V4M6 20v-6" strokeLinecap="round" strokeLinejoin="round" />
+        <Path d="M3 20h18" strokeLinecap="round" strokeLinejoin="round" />
+      </Svg>
+    );
+  } else if (label === 'History') {
+    iconNode = (
+      <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth}>
+        <Path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" strokeLinecap="round" strokeLinejoin="round" />
+      </Svg>
+    );
+  } else if (label === 'Settings') {
+    iconNode = (
+      <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth}>
+        <Path d="M12 15a3 3 0 100-6 3 3 0 000 6z" strokeLinecap="round" strokeLinejoin="round" />
+        <Path
+          d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </Svg>
+    );
+  }
+
   return (
     <View style={tabIconStyles.wrap}>
-      <Text style={[tabIconStyles.icon, focused && tabIconStyles.iconFocused]}>
-        {icons[label] ?? '·'}
-      </Text>
-      <Text style={[tabIconStyles.label, focused && tabIconStyles.labelFocused]}>
-        {label.toUpperCase()}
-      </Text>
+      <View style={tabIconStyles.iconBox}>{iconNode}</View>
+      {focused && <View style={tabIconStyles.activeDot} />}
     </View>
   );
 }
 
 const tabIconStyles = StyleSheet.create({
-  wrap:         { alignItems: 'center', justifyContent: 'center', gap: 2 },
-  icon:         { fontSize: 14, color: '#333333' },
-  iconFocused:  { color: '#FFFFFF' },
-  label:        { fontSize: 8, fontWeight: '800', letterSpacing: 1.5, color: '#333333' },
-  labelFocused: { color: '#FFFFFF' },
+  wrap:        { alignItems: 'center', justifyContent: 'center', height: '100%', gap: 4 },
+  iconBox:     { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  activeDot:   { width: 4, height: 4, borderRadius: 2, backgroundColor: '#FFFFFF' },
 });
 
 // ─── Bottom Tab Navigator ─────────────────────────────────────────────────────

@@ -31,10 +31,11 @@ import {
   Dimensions,
   Animated,
   Platform,
+  Vibration,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import Svg, { Path, Circle, G, Defs, LinearGradient, Stop, Ellipse } from 'react-native-svg';
+import Svg, { Path, Circle, G, Defs, LinearGradient, Stop, Ellipse, Line, Rect, Text as SvgText } from 'react-native-svg';
 import { useAuth } from '../context/AuthContext';
 
 const { width: SW, height: SH } = Dimensions.get('window');
@@ -43,11 +44,12 @@ const SVG_UPDATE_INTERVAL_MS    = 200; // SVG overlay refresh rate (decoupled fr
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS = {
-  CALIBRATING: { text: 'Calibrating',          color: '#FFFFFF', eyeColor: '#FFFFFF' },
-  AWAKE:       { text: 'Alert',                 color: '#22C55E', eyeColor: '#22C55E' },
+  CALIBRATING: { text: 'Calibrating',          color: '#94A3B8', eyeColor: '#00D9FF' },
+  AWAKE:       { text: 'Alert',                 color: '#22C55E', eyeColor: '#00D9FF' },
   WARNING:     { text: 'Drowsiness Detected',   color: '#F59E0B', eyeColor: '#F59E0B' },
   CRITICAL:    { text: 'Heavy Sleep Detected!', color: '#EF4444', eyeColor: '#EF4444' },
 };
+
 
 // ─── Stable CameraView — memo'd with no props → never re-renders ──────────────
 const StableCameraView = memo(({ cameraRef }) => (
@@ -64,7 +66,7 @@ const FaceMeshOverlay = memo(({ landmarks, fatigueState }) => {
   const eyeClr  = cfg.eyeColor;
   const meshClr = fatigueState === 'CRITICAL' ? '#EF4444'
                 : fatigueState === 'WARNING'  ? '#F59E0B'
-                : '#FFFFFF';
+                : '#00D9FF'; // bright cyan for AWAKE/CALIBRATING
 
   const mapPt = (pt) => {
     const cx = Math.max(0, Math.min(1, pt.x));
@@ -99,7 +101,16 @@ const FaceMeshOverlay = memo(({ landmarks, fatigueState }) => {
     };
   };
 
-  const reticle = (b, len = 8) => {
+  const getCentroid = (pts) => {
+    if (!pts?.length) return null;
+    const mapped = pts.map(mapPt);
+    return {
+      x: mapped.reduce((s, p) => s + p.x, 0) / mapped.length,
+      y: mapped.reduce((s, p) => s + p.y, 0) / mapped.length,
+    };
+  };
+
+  const reticle = (b, len = 10) => {
     if (!b) return '';
     const { x, y, w, h } = b;
     return `M ${x},${y + len} L ${x},${y} L ${x + len},${y}
@@ -108,15 +119,50 @@ const FaceMeshOverlay = memo(({ landmarks, fatigueState }) => {
             M ${x + len},${y + h} L ${x},${y + h} L ${x},${y + h - len}`;
   };
 
+  // No face detected — show positioning guide with corner brackets
   if (!landmarks) {
     return (
       <Svg width={SW} height={SH} style={StyleSheet.absoluteFill}>
+        <Defs>
+          <LinearGradient id="scanGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <Stop offset="0%"   stopColor={meshClr} stopOpacity="0" />
+            <Stop offset="50%"  stopColor={meshClr} stopOpacity="0.08" />
+            <Stop offset="100%" stopColor={meshClr} stopOpacity="0" />
+          </LinearGradient>
+        </Defs>
+        {/* Face positioning guide ellipse */}
         <Ellipse
           cx={SW / 2} cy={SH * 0.40}
           rx={SW * 0.30} ry={SH * 0.21}
-          stroke={meshClr} strokeWidth={1} strokeDasharray="8,6"
-          fill="transparent" opacity={0.25}
+          stroke={meshClr} strokeWidth={1.5} strokeDasharray="8,6"
+          fill="transparent" opacity={0.35}
         />
+        {/* Corner bracket top-left */}
+        <Path
+          d={`M ${SW * 0.5 - 46},${SH * 0.21} L ${SW * 0.5 - 66},${SH * 0.21} L ${SW * 0.5 - 66},${SH * 0.245}`}
+          stroke={meshClr} strokeWidth={2} fill="transparent" opacity={0.65}
+        />
+        {/* Corner bracket top-right */}
+        <Path
+          d={`M ${SW * 0.5 + 46},${SH * 0.21} L ${SW * 0.5 + 66},${SH * 0.21} L ${SW * 0.5 + 66},${SH * 0.245}`}
+          stroke={meshClr} strokeWidth={2} fill="transparent" opacity={0.65}
+        />
+        {/* Corner bracket bottom-left */}
+        <Path
+          d={`M ${SW * 0.5 - 46},${SH * 0.59} L ${SW * 0.5 - 66},${SH * 0.59} L ${SW * 0.5 - 66},${SH * 0.565}`}
+          stroke={meshClr} strokeWidth={2} fill="transparent" opacity={0.65}
+        />
+        {/* Corner bracket bottom-right */}
+        <Path
+          d={`M ${SW * 0.5 + 46},${SH * 0.59} L ${SW * 0.5 + 66},${SH * 0.59} L ${SW * 0.5 + 66},${SH * 0.565}`}
+          stroke={meshClr} strokeWidth={2} fill="transparent" opacity={0.65}
+        />
+        {/* Center crosshair */}
+        <Line x1={SW / 2 - 14} y1={SH * 0.40} x2={SW / 2 + 14} y2={SH * 0.40}
+          stroke={meshClr} strokeWidth={1} opacity={0.4} />
+        <Line x1={SW / 2} y1={SH * 0.40 - 14} x2={SW / 2} y2={SH * 0.40 + 14}
+          stroke={meshClr} strokeWidth={1} opacity={0.4} />
+        <Circle cx={SW / 2} cy={SH * 0.40} r={3} fill={meshClr} opacity={0.3} />
       </Svg>
     );
   }
@@ -126,59 +172,91 @@ const FaceMeshOverlay = memo(({ landmarks, fatigueState }) => {
   const jawPath   = buildPath(landmarks.jawline);
   const leftBox   = getBox(landmarks.left_eye);
   const rightBox  = getBox(landmarks.right_eye);
+  const leftCenter  = getCentroid(landmarks.left_eye);
+  const rightCenter = getCentroid(landmarks.right_eye);
+  const faceBox     = getBox(landmarks.jawline);
+  const faceCx      = faceBox ? faceBox.cx : SW / 2;
+  const faceCy      = faceBox ? faceBox.cy : SH * 0.4;
 
   return (
     <Svg width={SW} height={SH} style={StyleSheet.absoluteFill}>
       <Defs>
         <LinearGradient id="fg" x1="0%" y1="0%" x2="100%" y2="100%">
-          <Stop offset="0%"   stopColor={meshClr} stopOpacity="0.20" />
-          <Stop offset="100%" stopColor={meshClr}  stopOpacity="0.03" />
+          <Stop offset="0%"   stopColor={meshClr} stopOpacity="0.18" />
+          <Stop offset="100%" stopColor={meshClr} stopOpacity="0.03" />
+        </LinearGradient>
+        <LinearGradient id="eyeGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+          <Stop offset="0%"   stopColor={eyeClr} stopOpacity="0.35" />
+          <Stop offset="100%" stopColor={eyeClr} stopOpacity="0.05" />
         </LinearGradient>
       </Defs>
 
-      {/* Jawline mesh */}
+      {/* Jaw / face contour */}
       {!!jawPath && (
-        <Path d={jawPath} stroke={meshClr} strokeWidth={1}
-          strokeDasharray="5,4" fill="url(#fg)" opacity={0.45} />
+        <Path d={jawPath} stroke={meshClr} strokeWidth={1.2}
+          strokeDasharray="6,5" fill="url(#fg)" opacity={0.5} />
       )}
 
-      {/* Eye polygons */}
-      {!!leftPath  && <Path d={leftPath}  stroke={eyeClr} strokeWidth={2} fill={eyeClr + '20'} opacity={0.9} />}
-      {!!rightPath && <Path d={rightPath} stroke={eyeClr} strokeWidth={2} fill={eyeClr + '20'} opacity={0.9} />}
+      {/* Eye filled polygons with gradient */}
+      {!!leftPath  && <Path d={leftPath}  stroke={eyeClr} strokeWidth={2.5} fill="url(#eyeGrad)" opacity={0.92} />}
+      {!!rightPath && <Path d={rightPath} stroke={eyeClr} strokeWidth={2.5} fill="url(#eyeGrad)" opacity={0.92} />}
 
-      {/* Landmark dots */}
-      {landmarks.left_eye?.map((pt, i) => {
-        const { x, y } = mapPt(pt);
-        return <Circle key={`l${i}`} cx={x} cy={y} r={2.5} fill="#FFFFFF" stroke={eyeClr} strokeWidth={1} />;
-      })}
-      {landmarks.right_eye?.map((pt, i) => {
-        const { x, y } = mapPt(pt);
-        return <Circle key={`r${i}`} cx={x} cy={y} r={2.5} fill="#FFFFFF" stroke={eyeClr} strokeWidth={1} />;
-      })}
-
-      {/* Eye boxes with reticle */}
+      {/* Eye outer glow rings */}
       {leftBox && (
         <G>
+          {/* Outer halo */}
+          <Ellipse cx={leftBox.cx} cy={leftBox.cy} rx={leftBox.rx + 10} ry={leftBox.ry + 8}
+            stroke={eyeClr} strokeWidth={0.6} fill="transparent" opacity={0.18} />
+          {/* Inner dashed ellipse */}
           <Ellipse cx={leftBox.cx} cy={leftBox.cy} rx={leftBox.rx + 4} ry={leftBox.ry + 4}
-            stroke={eyeClr} strokeWidth={1} fill="transparent" opacity={0.4} strokeDasharray="3,3" />
-          <Path d={reticle(leftBox)} stroke={eyeClr} strokeWidth={1.5} fill="transparent" />
+            stroke={eyeClr} strokeWidth={1.2} fill="transparent" opacity={0.5} strokeDasharray="4,3" />
+          {/* Corner reticle */}
+          <Path d={reticle(leftBox)} stroke={eyeClr} strokeWidth={2} fill="transparent" />
+          {/* Iris center dot */}
+          {leftCenter && <Circle cx={leftCenter.x} cy={leftCenter.y} r={3.5} fill={eyeClr} opacity={0.85} />}
+          {leftCenter && <Circle cx={leftCenter.x} cy={leftCenter.y} r={7} stroke={eyeClr} strokeWidth={0.8} fill="transparent" opacity={0.3} />}
         </G>
       )}
       {rightBox && (
         <G>
+          <Ellipse cx={rightBox.cx} cy={rightBox.cy} rx={rightBox.rx + 10} ry={rightBox.ry + 8}
+            stroke={eyeClr} strokeWidth={0.6} fill="transparent" opacity={0.18} />
           <Ellipse cx={rightBox.cx} cy={rightBox.cy} rx={rightBox.rx + 4} ry={rightBox.ry + 4}
-            stroke={eyeClr} strokeWidth={1} fill="transparent" opacity={0.4} strokeDasharray="3,3" />
-          <Path d={reticle(rightBox)} stroke={eyeClr} strokeWidth={1.5} fill="transparent" />
+            stroke={eyeClr} strokeWidth={1.2} fill="transparent" opacity={0.5} strokeDasharray="4,3" />
+          <Path d={reticle(rightBox)} stroke={eyeClr} strokeWidth={2} fill="transparent" />
+          {rightCenter && <Circle cx={rightCenter.x} cy={rightCenter.y} r={3.5} fill={eyeClr} opacity={0.85} />}
+          {rightCenter && <Circle cx={rightCenter.x} cy={rightCenter.y} r={7} stroke={eyeClr} strokeWidth={0.8} fill="transparent" opacity={0.3} />}
         </G>
+      )}
+
+      {/* Landmark dots */}
+      {landmarks.left_eye?.map((pt, i) => {
+        const { x, y } = mapPt(pt);
+        return <Circle key={`l${i}`} cx={x} cy={y} r={3} fill={eyeClr} stroke="#000000" strokeWidth={0.5} opacity={0.85} />;
+      })}
+      {landmarks.right_eye?.map((pt, i) => {
+        const { x, y } = mapPt(pt);
+        return <Circle key={`r${i}`} cx={x} cy={y} r={3} fill={eyeClr} stroke="#000000" strokeWidth={0.5} opacity={0.85} />;
+      })}
+
+      {/* Face center tracking dot */}
+      <Circle cx={faceCx} cy={faceCy} r={8} stroke={meshClr} strokeWidth={1.5} fill="transparent" opacity={0.35} />
+      <Circle cx={faceCx} cy={faceCy} r={3} fill={meshClr} opacity={0.6} />
+
+      {/* Face bounding box reticle from jawline */}
+      {faceBox && (
+        <Path d={reticle({ x: faceBox.x, y: faceBox.y, w: faceBox.w, h: faceBox.h }, 18)}
+          stroke={meshClr} strokeWidth={1.5} fill="transparent" opacity={0.5} />
       )}
     </Svg>
   );
 });
 
+
 // ─── Main CameraScreen ────────────────────────────────────────────────────────
 export function CameraScreen({ route, navigation, onCriticalAlarm }) {
   const serverIpFromRoute = route?.params?.serverIp ?? null;
-  const { saveSession }   = useAuth();
+  const { user, saveSession } = useAuth();
 
   const [permission, requestPermission] = useCameraPermissions();
 
@@ -208,9 +286,11 @@ export function CameraScreen({ route, navigation, onCriticalAlarm }) {
   const sessionStartRef  = useRef(new Date().toISOString());
   const totalAlertsRef   = useRef(0);
   const peakStateRef     = useRef('AWAKE');
-  const blinkCountRef    = useRef(0);
   const sessionSecRef    = useRef(0);
   const sessionTimerRef  = useRef(null);
+  const sessionSavedRef  = useRef(false);
+  const saveSessionRef   = useRef(saveSession);
+  useEffect(() => { saveSessionRef.current = saveSession; }, [saveSession]);
   const serverIp         = useRef(serverIpFromRoute).current;
 
   // ── State order for peak tracking ─────────────────────────────────────────
@@ -243,6 +323,16 @@ export function CameraScreen({ route, navigation, onCriticalAlarm }) {
       mountedRef.current = false;
       clearInterval(sessionTimerRef.current);
       clearInterval(svgTimerRef.current);
+      if (!sessionSavedRef.current && sessionSecRef.current >= 3) {
+        sessionSavedRef.current = true;
+        saveSessionRef.current?.({
+          startedAt:   sessionStartRef.current,
+          endedAt:     new Date().toISOString(),
+          totalAlerts: totalAlertsRef.current,
+          peakState:   peakStateRef.current,
+          durationSec: Math.max(1, sessionSecRef.current),
+        });
+      }
     };
   }, []);
 
@@ -305,7 +395,13 @@ export function CameraScreen({ route, navigation, onCriticalAlarm }) {
               totalAlertsRef.current += 1;
               // setSleepAlerts batched — only update displayed integer
               setSleepAlerts(totalAlertsRef.current);
-              if (data.state === 'CRITICAL' && onCriticalAlarm) onCriticalAlarm();
+            }
+
+            if (data.state === 'WARNING') {
+              try { Vibration.vibrate(200); } catch (_) {}
+            } else if (data.state === 'CRITICAL' || data.alarm) {
+              try { Vibration.vibrate([0, 450, 200, 450], true); } catch (_) {}
+              if (onCriticalAlarm) onCriticalAlarm();
             }
             if (data.blink_count != null) blinkCountRef.current = data.blink_count;
           } catch (_) {}
@@ -354,7 +450,12 @@ export function CameraScreen({ route, navigation, onCriticalAlarm }) {
           quality: 0.15, base64: true, shutterSound: false, skipProcessing: true,
         });
         if (photo?.base64 && wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ image: photo.base64, timestamp: Date.now() }));
+          wsRef.current.send(JSON.stringify({
+            image: photo.base64,
+            timestamp: Date.now(),
+            driver_code: user?.driverCode,
+            driver_id: user?.displayName,
+          }));
         }
       } catch (_) {
       } finally {
@@ -384,24 +485,30 @@ export function CameraScreen({ route, navigation, onCriticalAlarm }) {
 
   // ── End session ────────────────────────────────────────────────────────────
   const handleEndSession = useCallback(() => {
-    saveSession({
-      startedAt:   sessionStartRef.current,
-      endedAt:     new Date().toISOString(),
-      totalAlerts: totalAlertsRef.current,
-      peakState:   peakStateRef.current,
-      durationSec: sessionSecRef.current,
-      blinkCount:  blinkCountRef.current,
-    });
+    if (!sessionSavedRef.current) {
+      sessionSavedRef.current = true;
+      saveSession({
+        startedAt:   sessionStartRef.current,
+        endedAt:     new Date().toISOString(),
+        totalAlerts: totalAlertsRef.current,
+        peakState:   peakStateRef.current,
+        durationSec: Math.max(1, sessionSecRef.current),
+      });
+    }
     navigation?.goBack();
   }, [saveSession, navigation]);
 
   // ── Recalibrate ────────────────────────────────────────────────────────────
   const handleRecalibrate = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ action: 'calibrate' }));
+      wsRef.current.send(JSON.stringify({
+        action: 'calibrate',
+        driver_code: user?.driverCode,
+        driver_id: user?.displayName,
+      }));
       setFatigueState('CALIBRATING');
     }
-  }, []);
+  }, [user]);
 
   // ── Format duration ────────────────────────────────────────────────────────
   const fmtDuration = (sec) => {

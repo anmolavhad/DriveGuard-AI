@@ -22,11 +22,25 @@ import { useAuth } from '../context/AuthContext';
 const { width: SW } = Dimensions.get('window');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const fmtHours = (sec) => {
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
+const fmtSmartDuration = (sec) => {
+  if (!sec || sec <= 0) return '0s';
+  const s = Math.round(Number(sec));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const remainderSec = s % 60;
   if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+  if (m > 0) return `${m}m ${remainderSec}s`;
+  return `${remainderSec}s`;
+};
+
+// Robust session duration resolver (checks durationSec, falls back to start/end delta)
+const getSessionDuration = (s) => {
+  let dur = Number(s?.durationSec);
+  if ((!dur || dur <= 0) && s?.startedAt && s?.endedAt) {
+    const diff = Math.round((new Date(s.endedAt).getTime() - new Date(s.startedAt).getTime()) / 1000);
+    if (diff > 0) dur = diff;
+  }
+  return dur && dur > 0 ? dur : 0;
 };
 
 // ─── Mini progress bar ────────────────────────────────────────────────────────
@@ -108,7 +122,7 @@ export function AnalyticsScreen() {
     const critical = sessions.filter((s) => s.peakState === 'CRITICAL').length;
     const warning  = sessions.filter((s) => s.peakState === 'WARNING').length;
     const safe     = sessions.filter((s) => s.peakState === 'AWAKE').length;
-    const totalSec = sessions.reduce((a, s) => a + (s.durationSec ?? 0), 0);
+    const totalSec = sessions.reduce((a, s) => a + getSessionDuration(s), 0);
     const avgDurSec = total > 0 ? Math.round(totalSec / total) : 0;
     const alertRate = total > 0 ? (alerts / total).toFixed(1) : '0.0';
     const safeRate  = total > 0 ? Math.round((safe / total) * 100) : 100;
@@ -147,7 +161,7 @@ export function AnalyticsScreen() {
         {/* ── Big numbers row ── */}
         <View style={styles.bigRow}>
           <BigStat value={analytics.total}        label="SESSIONS" />
-          <BigStat value={fmtHours(analytics.totalSec)} label="MONITORED" sub="total hours" />
+          <BigStat value={fmtSmartDuration(analytics.totalSec)} label="MONITORED" sub="total duration" />
           <BigStat value={`${analytics.safeRate}%`}    label="SAFE RATE" />
         </View>
 
@@ -196,7 +210,7 @@ export function AnalyticsScreen() {
         <View style={[styles.bigRow, { marginBottom: 48 }]}>
           <BigStat value={analytics.alerts}    label="TOTAL ALERTS" />
           <BigStat value={analytics.alertRate} label="ALERTS / SESSION" sub="average" />
-          <BigStat value={fmtHours(analytics.avgDurSec)} label="AVG DURATION" />
+          <BigStat value={fmtSmartDuration(analytics.avgDurSec)} label="AVG DURATION" />
         </View>
 
         {/* ── Section: Time of day heatmap ── */}

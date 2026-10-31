@@ -1,0 +1,11 @@
+{
+  "name": "driveguard-web-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix driveguard-dashboard run dev",
+    "build": "npm --prefix driveguard-dashboard run build",
+    "preview": "npm --prefix driveguard-dashboard run preview"
+  }
+}
+

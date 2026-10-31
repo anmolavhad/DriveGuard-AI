@@ -1,0 +1,299 @@
+{
+  "drivers": {
+    "drv_demo_1": {
+      "uid": "drv_demo_1",
+      "email": "alex.rivera@fleet.com",
+      "displayName": "Alex Rivera",
+      "driverCode": "DG8042",
+      "vehicleId": "TRK-902",
+      "createdAt": "2026-10-30T10:00:00Z"
+    },
+    "drv_demo_2": {
+      "uid": "drv_demo_2",
+      "email": "sarah.chen@fleet.com",
+      "displayName": "Sarah Chen",
+      "driverCode": "SC4491",
+      "vehicleId": "VAN-104",
+      "createdAt": "2026-10-30T11:00:00Z"
+    },
+    "ir7oiqpz2ktuva41": {
+      "uid": "ir7oiqpz2ktuva41",
+      "email": "virat@gmail.com",
+      "displayName": "Virat",
+      "driverCode": "PQ72S7",
+      "vehicleId": "FLEET-01",
+      "createdAt": "2026-10-30T13:37:53.911Z"
+    },
+    "trvuxti3ae8m34mr": {
+      "uid": "trvuxti3ae8m34mr",
+      "email": "omd@gmail.com",
+      "displayName": "Om Deshmukh",
+      "driverCode": "273AVQ",
+      "vehicleId": "FLEET-01",
+      "createdAt": "2026-10-30T13:39:09.493Z"
+    },
+    "o9lvbbbq2snsatn7": {
+      "uid": "o9lvbbbq2snsatn7",
+      "email": "kohli@gmail.com",
+      "displayName": "Kohli",
+      "driverCode": "4MT9BJ",
+      "vehicleId": "FLEET-01",
+      "createdAt": "2026-10-30T14:06:04.896Z"
+    },
+    "sh1rj1nl1j6sn2er": {
+      "uid": "sh1rj1nl1j6sn2er",
+      "email": "aditya@gmail.com",
+      "displayName": "Aditya",
+      "driverCode": "MMBCCH",
+      "vehicleId": "FLEET-01",
+      "createdAt": "2026-10-30T14:07:40.686Z"
+    }
+  },
+  "operators": {
+    "op_demo_1": {
+      "id": "op_demo_1",
+      "name": "Fleet Controller",
+      "email": "admin@driveguard.ai",
+      "password": "password123",
+      "driverCodes": [
+        "DG8042",
+        "SC4491"
+      ],
+      "createdAt": "2026-10-30T09:00:00Z"
+    },
+    "op_1793369498585": {
+      "id": "op_1793369498585",
+      "name": "Virat",
+      "email": "virat@gmail.com",
+      "password": "123456",
+      "driverCodes": [],
+      "createdAt": "2026-10-30T19:41:38Z"
+    },
+    "op_1793378391133": {
+      "id": "op_1793378391133",
+      "name": "Anmol Avhad",
+      "email": "anmolavhad@gmail.com",
+      "password": "123456",
+      "driverCodes": [
+        "MMBCCH"
+      ],
+      "createdAt": "2026-10-30T22:09:51Z"
+    },
+    "op_1793378488996": {
+      "id": "op_1793378488996",
+      "name": "rohit",
+      "email": "rohit@gmail.com",
+      "password": "123456",
+      "driverCodes": [
+        "MMBCCH",
+        "PQ72S7"
+      ],
+      "createdAt": "2026-10-30T22:11:28Z"
+    }
+  },
+  "sessions": [
+    {
+      "id": "sess_101",
+      "driverCode": "DG8042",
+      "driverName": "Alex Rivera",
+      "startedAt": "2026-10-30T08:00:00Z",
+      "endedAt": "2026-10-30T09:15:00Z",
+      "totalAlerts": 1,
+      "peakState": "WARNING",
+      "durationSec": 4500,
+      "blinkCount": 230
+    },
+    {
+      "id": "p6mqd8gndgi7z4qb",
+      "driverCode": "273AVQ",
+      "driverName": "Om Deshmukh",
+      "startedAt": "2026-10-30T13:39:51.061Z",
+      "endedAt": "2026-10-30T13:40:33.617Z",
+      "totalAlerts": 6,
+      "peakState": "CRITICAL",
+      "durationSec": 41,
+      "blinkCount": 0,
+      "createdAt": "2026-10-30T19:10:33Z"
+    },
+    {
+      "id": "imfq9h9ov6su7r6d",
+      "driverCode": "273AVQ",
+      "driverName": "Om Deshmukh",
+      "startedAt": "2026-10-30T13:47:05.761Z",
+      "endedAt": "2026-10-30T13:48:01.873Z",
+      "totalAlerts": 12,
+      "peakState": "CRITICAL",
+      "durationSec": 55,
+      "blinkCount": 0,
+      "createdAt": "2026-10-30T19:18:01Z"
+    },
+    {
+      "id": "ob3071gf2kojd0t9",
+      "driverCode": "273AVQ",
+      "driverName": "Om Deshmukh",
+      "startedAt": "2026-10-30T13:48:11.243Z",
+      "endedAt": "2026-10-30T13:48:35.900Z",
+      "totalAlerts": 2,
+      "peakState": "CRITICAL",
+      "durationSec": 24,
+      "blinkCount": 0,
+      "createdAt": "2026-10-30T19:18:35Z"
+    },
+    {
+      "id": "2dd5oek0deurasb0",
+      "driverCode": "4MT9BJ",
+      "driverName": "Kohli",
+      "startedAt": "2026-10-30T14:06:42.240Z",
+      "endedAt": "2026-10-30T14:07:01.922Z",
+      "totalAlerts": 4,
+      "peakState": "CRITICAL",
+      "durationSec": 19,
+      "blinkCount": 0,
+      "createdAt": "2026-10-30T19:37:01Z"
+    },
+    {
+      "id": "zlv0t2i41cf48jrk",
+      "driverCode": "MMBCCH",
+      "driverName": "Aditya",
+      "startedAt": "2026-10-30T14:08:14.408Z",
+      "endedAt": "2026-10-30T14:08:56.939Z",
+      "totalAlerts": 7,
+      "peakState": "CRITICAL",
+      "durationSec": 36,
+      "blinkCount": 0,
+      "createdAt": "2026-10-30T19:38:56Z"
+    },
+    {
+      "id": "9zvxjxzmfxue8ijv",
+      "driverCode": "MMBCCH",
+      "driverName": "Aditya",
+      "startedAt": "2026-10-30T14:09:26.708Z",
+      "endedAt": "2026-10-30T14:10:12.566Z",
+      "totalAlerts": 21,
+      "peakState": "CRITICAL",
+      "durationSec": 45,
+      "blinkCount": 0,
+      "createdAt": "2026-10-30T19:40:12Z"
+    },
+    {
+      "id": "3snatrdh0z35sn7k",
+      "driverCode": "MMBCCH",
+      "driverName": "Aditya",
+      "startedAt": "2026-10-30T14:10:21.946Z",
+      "endedAt": "2026-10-30T14:10:51.378Z",
+      "totalAlerts": 5,
+      "peakState": "CRITICAL",
+      "durationSec": 29,
+      "blinkCount": 0,
+      "createdAt": "2026-10-30T19:40:51Z"
+    },
+    {
+      "id": "9rdxk5q7giasvitp",
+      "driverCode": "MMBCCH",
+      "driverName": "Aditya",
+      "startedAt": "2026-10-30T14:38:20.632Z",
+      "endedAt": "2026-10-30T14:38:23.255Z",
+      "totalAlerts": 0,
+      "peakState": "AWAKE",
+      "durationSec": 2,
+      "blinkCount": 0,
+      "createdAt": "2026-10-30T20:08:23Z"
+    },
+    {
+      "id": "ey9w8jfx5qmuhwfz",
+      "driverCode": "MMBCCH",
+      "driverName": "Aditya",
+      "startedAt": "2026-10-30T16:13:13.341Z",
+      "endedAt": "2026-10-30T16:13:59.330Z",
+      "totalAlerts": 10,
+      "peakState": "CRITICAL",
+      "durationSec": 45,
+      "blinkCount": 0,
+      "createdAt": "2026-10-30T21:43:59Z"
+    },
+    {
+      "id": "dovja72msywshlni",
+      "driverCode": "MMBCCH",
+      "driverName": "Aditya",
+      "startedAt": "2026-10-30T16:44:30.468Z",
+      "endedAt": "2026-10-30T16:44:47.393Z",
+      "totalAlerts": 3,
+      "peakState": "CRITICAL",
+      "durationSec": 16,
+      "blinkCount": 0,
+      "createdAt": "2026-10-30T22:14:47Z"
+    },
+    {
+      "id": "hh6civbuxmuasyn6",
+      "driverCode": "MMBCCH",
+      "driverName": "Aditya",
+      "startedAt": "2026-10-30T16:50:44.791Z",
+      "endedAt": "2026-10-30T16:51:05.528Z",
+      "totalAlerts": 3,
+      "peakState": "CRITICAL",
+      "durationSec": 20,
+      "blinkCount": 0,
+      "createdAt": "2026-10-30T22:21:06Z"
+    },
+    {
+      "id": "z9uzoavsai94co1e",
+      "driverCode": "MMBCCH",
+      "driverName": "Aditya",
+      "startedAt": "2026-10-30T17:04:08.226Z",
+      "endedAt": "2026-10-30T17:04:44.732Z",
+      "totalAlerts": 10,
+      "peakState": "CRITICAL",
+      "durationSec": 35,
+      "blinkCount": 0,
+      "createdAt": "2026-10-30T22:34:45Z"
+    },
+    {
+      "id": "gluf0b8nym22ymsi",
+      "driverCode": "MMBCCH",
+      "driverName": "Aditya",
+      "startedAt": "2026-10-30T17:05:21.288Z",
+      "endedAt": "2026-10-30T17:06:11.349Z",
+      "totalAlerts": 25,
+      "peakState": "CRITICAL",
+      "durationSec": 49,
+      "blinkCount": 0,
+      "createdAt": "2026-10-30T22:36:12Z"
+    },
+    {
+      "id": "7r4gjti526dbsjwx",
+      "driverCode": "MMBCCH",
+      "driverName": "Aditya",
+      "startedAt": "2026-10-30T17:06:20.330Z",
+      "endedAt": "2026-10-30T17:06:55.545Z",
+      "totalAlerts": 6,
+      "peakState": "CRITICAL",
+      "durationSec": 34,
+      "blinkCount": 0,
+      "createdAt": "2026-10-30T22:36:56Z"
+    },
+    {
+      "id": "mwczwmoof9yazer2",
+      "driverCode": "MMBCCH",
+      "driverName": "Aditya",
+      "startedAt": "2026-10-30T17:16:46.797Z",
+      "endedAt": "2026-10-30T17:17:26.996Z",
+      "totalAlerts": 0,
+      "peakState": "AWAKE",
+      "durationSec": 39,
+      "blinkCount": 0,
+      "createdAt": "2026-10-30T22:47:28Z"
+    },
+    {
+      "id": "465ui95h2k775soz",
+      "driverCode": "MMBCCH",
+      "driverName": "Aditya",
+      "startedAt": "2026-10-30T17:17:26.978Z",
+      "endedAt": "2026-10-30T17:18:07.271Z",
+      "totalAlerts": 6,
+      "peakState": "CRITICAL",
+      "durationSec": 34,
+      "blinkCount": 0,
+      "createdAt": "2026-10-30T22:48:08Z"
+    }
+  ]
+}

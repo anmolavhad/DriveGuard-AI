@@ -31,11 +31,19 @@ const stateLabel = (s) => {
   if (s === 'WARNING')  return 'MILD DROWSY';
   return 'ATTENTIVE';
 };
-const fmtDuration = (sec) => {
-  if (!sec) return '0s';
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+const fmtDuration = (sec, startedAt, endedAt) => {
+  let s = Number(sec);
+  if ((!s || s <= 0) && startedAt && endedAt) {
+    const diff = Math.round((new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 1000);
+    if (diff > 0) s = diff;
+  }
+  if (!s || s <= 0) return '0s';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const remainderSec = s % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${remainderSec}s`;
+  return `${remainderSec}s`;
 };
 const fmtDate = (iso) => {
   if (!iso) return '—';
@@ -81,9 +89,9 @@ function SessionDetailModal({ session, onClose }) {
           <View style={detailStyles.grid}>
             <StatCell label="START"     value={fmtTime(session.startedAt)} />
             <StatCell label="END"       value={fmtTime(session.endedAt)} />
-            <StatCell label="DURATION"  value={fmtDuration(session.durationSec)} />
+            <StatCell label="DURATION"  value={fmtDuration(session.durationSec, session.startedAt, session.endedAt)} />
             <StatCell label="SLEEP ALERTS" value={session.totalAlerts ?? 0} accent={session.totalAlerts > 0 ? '#EF4444' : '#22C55E'} />
-            <StatCell label="BLINK COUNT"  value={session.blinkCount ?? '—'} />
+            <StatCell label="PEAK RISK"    value={label} accent={color} />
             <StatCell label="SESSION ID"   value={session.id?.slice(0, 8) ?? '—'} />
           </View>
 
@@ -176,12 +184,12 @@ function SessionCard({ session, onPress }) {
           <Text style={cardStyles.date}>{fmtDate(session.startedAt)}</Text>
         </View>
         <View style={cardStyles.statsRow}>
-          <MiniStat label="DURATION" value={fmtDuration(session.durationSec)} />
+          <MiniStat label="DURATION" value={fmtDuration(session.durationSec, session.startedAt, session.endedAt)} />
           <View style={cardStyles.divider} />
           <MiniStat label="ALERTS" value={session.totalAlerts ?? 0}
             valueColor={session.totalAlerts > 0 ? '#F59E0B' : '#22C55E'} />
           <View style={cardStyles.divider} />
-          <MiniStat label="BLINKS" value={session.blinkCount ?? '—'} />
+          <MiniStat label="PEAK RISK" value={label} valueColor={color} />
         </View>
       </View>
       <Text style={cardStyles.chevron}>›</Text>
