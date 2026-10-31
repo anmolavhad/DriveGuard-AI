@@ -46,9 +46,9 @@ class MySQLDatabase:
 
     def _init_database(self):
         """Ensures the database and required tables exist with connection retry for cloud/containers."""
-        # 1. Connect with retry to allow MySQL container warmup
+        # 1. Connect with retry to allow MySQL container warmup (quick fail for localhost)
         conn = None
-        retries = 6
+        retries = 1 if self.host in ("localhost", "127.0.0.1") else 6
         for attempt in range(1, retries + 1):
             try:
                 conn = self._get_connection(include_db=False)
@@ -56,7 +56,7 @@ class MySQLDatabase:
             except Exception as e:
                 if attempt == retries:
                     raise e
-                print(f"[MySQL Warmup] Waiting for database (attempt {attempt}/{retries})...")
+                print(f"[MySQL Warmup] Waiting for remote database at {self.host} (attempt {attempt}/{retries})...")
                 time.sleep(2)
 
         try:

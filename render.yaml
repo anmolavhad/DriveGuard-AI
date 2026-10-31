@@ -19,3 +19,4 @@ services:
         sync: false
       - key: MYSQL_DB
         value: driveguard_db
+

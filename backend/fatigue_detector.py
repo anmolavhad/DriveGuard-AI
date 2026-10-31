@@ -130,13 +130,22 @@ class MediaPipeFaceMeshDetector:
 
     def __init__(self):
         self.mode = "tasks"
+        self.detector = None
         try:
             import mediapipe as mp
             from mediapipe.tasks import python
             from mediapipe.tasks.python import vision
 
             ensure_model_file()
-            base_options = python.BaseOptions(model_asset_path=MODEL_PATH)
+            model_bytes = None
+            if os.path.exists(MODEL_PATH):
+                with open(MODEL_PATH, "rb") as f:
+                    model_bytes = f.read()
+
+            base_options = python.BaseOptions(
+                model_asset_buffer=model_bytes if model_bytes else None,
+                model_asset_path=MODEL_PATH if not model_bytes else None
+            )
             options = vision.FaceLandmarkerOptions(
                 base_options=base_options,
                 output_face_blendshapes=False,
@@ -145,27 +154,40 @@ class MediaPipeFaceMeshDetector:
             )
             self.detector = vision.FaceLandmarker.create_from_options(options)
             self.mp = mp
-            print("[MediaPipe] Initialized MediaPipe Tasks FaceLandmarker.")
+            print("[MediaPipe] Initialized MediaPipe Tasks FaceLandmarker successfully.")
         except Exception as err:
-            print(f"[MediaPipe] Tasks init fallback: {err}. Trying legacy FaceMesh...")
+            print(f"[MediaPipe] Tasks init notice: {err}. Attempting fallback...")
             try:
                 import mediapipe as mp
-                self.legacy_face_mesh = mp.solutions.face_mesh.FaceMesh(
-                    max_num_faces=1,
-                    refine_landmarks=True,
-                    min_detection_confidence=0.5,
-                    min_tracking_confidence=0.5,
-                )
-                self.mode = "legacy"
-                print("[MediaPipe] Initialized legacy FaceMesh.")
-            except Exception as leg_err:
-                raise RuntimeError(f"Failed to initialize MediaPipe: {leg_err}")
+                try:
+                    from mediapipe.python.solutions import face_mesh as mp_face_mesh
+                except Exception:
+                    mp_face_mesh = getattr(getattr(mp, 'solutions', None), 'face_mesh', None)
 
-    def process_frame(self, bgr_image: np.ndarray) -> Tuple[Optional[float], Optional[float]]:
+                if mp_face_mesh:
+                    self.legacy_face_mesh = mp_face_mesh.FaceMesh(
+                        max_num_faces=1,
+                        refine_landmarks=True,
+                        min_detection_confidence=0.5,
+                        min_tracking_confidence=0.5,
+                    )
+                    self.mode = "legacy"
+                    print("[MediaPipe] Initialized legacy FaceMesh.")
+                else:
+                    self.mode = "disabled"
+                    print("[MediaPipe] Running in graceful fallback mode.")
+            except Exception as leg_err:
+                self.mode = "disabled"
+                print(f"[MediaPipe] Fallback active ({leg_err}). Server ready.")
+
+    def process_frame(self, bgr_image: np.ndarray) -> Tuple[Optional[float], Optional[float], Optional[Dict]]:
         """
-        Process BGR frame and return (ear, mar).
-        Returns (None, None) if no face is detected.
+        Process BGR frame and return (ear, mar, landmarks_dict).
+        Returns (None, None, None) if no face is detected.
         """
+        if self.mode == "disabled" or (self.mode == "tasks" and getattr(self, "detector", None) is None):
+            return None, None, None
+
         rgb_image = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2RGB)
 
         if self.mode == "tasks":
