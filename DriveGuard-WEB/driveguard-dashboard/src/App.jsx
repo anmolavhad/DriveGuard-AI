@@ -120,18 +120,6 @@ function AuthPage({ onLogin }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // Quick fill demo credentials for fleet evaluation
-  const handleQuickDemo = () => {
-    setMode('login');
-    setForm({
-      name: 'Lead Dispatcher',
-      email: 'dispatcher@fleet.driveguard.ai',
-      password: 'Operator@2026',
-      confirmPassword: 'Operator@2026',
-    });
-    setError('');
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -398,18 +386,6 @@ function AuthPage({ onLogin }) {
                   Create Account
                 </button>
               </div>
-
-              {/* Quick Demo Credentials Autofill Helper */}
-              {mode === 'login' && (
-                <button
-                  type="button"
-                  onClick={handleQuickDemo}
-                  className="w-full mb-5 py-2 px-3 rounded-lg bg-blue-500/10 hover:bg-blue-500/15 border border-blue-500/20 text-blue-400 text-xs font-medium flex items-center justify-center gap-2 transition-all active:scale-[0.99]"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                  <span>Quick Demo: Load Dispatcher Credentials</span>
-                </button>
-              )}
 
               {/* Semantic Form complying with modern-web-guidance */}
               <form onSubmit={handleSubmit} noValidate className="space-y-4">
