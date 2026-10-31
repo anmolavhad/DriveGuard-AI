@@ -36,13 +36,6 @@ import {
 import Svg, { Path } from 'react-native-svg';
 
 // ── Audio Engine Safe Imports ─────────────────────────────────────────────────
-let ExpoAvAudio = null;
-try {
-  ExpoAvAudio = require('expo-av').Audio;
-} catch (e) {
-  console.warn('[SleepAlarmModal] expo-av not available:', e);
-}
-
 let ExpoAudio = null;
 try {
   ExpoAudio = require('expo-audio');
@@ -107,45 +100,8 @@ export function SleepAlarmModal({ visible, onDismiss }) {
       return;
     }
 
-    // 2. Primary Mobile Engine: expo-av
-    let avSuccess = false;
-    if (ExpoAvAudio) {
-      try {
-        await ExpoAvAudio.setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: true,
-          shouldDuckAndroid: false,
-          playThroughEarpieceAndroid: false,
-          allowsRecordingIOS: false,
-        }).catch(() => {});
-
-        // Clean up previous sound if lingering
-        if (soundAvRef.current) {
-          try {
-            await soundAvRef.current.stopAsync();
-            await soundAvRef.current.unloadAsync();
-          } catch (_) {}
-          soundAvRef.current = null;
-        }
-
-        const { sound } = await ExpoAvAudio.Sound.createAsync(
-          ALARM_SOUND_ASSET,
-          {
-            shouldPlay: true,
-            isLooping: true,
-            volume: 1.0,
-          }
-        );
-        soundAvRef.current = sound;
-        await sound.playAsync();
-        avSuccess = true;
-      } catch (err) {
-        console.warn('[SleepAlarmModal] expo-av playback warning, attempting expo-audio fallback:', err);
-      }
-    }
-
-    // 3. Secondary Mobile Fallback: expo-audio
-    if (!avSuccess && ExpoAudio) {
+    // 2. Primary Mobile Engine: expo-audio
+    if (ExpoAudio) {
       try {
         if (typeof ExpoAudio.setAudioModeAsync === 'function') {
           await ExpoAudio.setAudioModeAsync({
@@ -165,7 +121,7 @@ export function SleepAlarmModal({ visible, onDismiss }) {
           }
         }
       } catch (err) {
-        console.warn('[SleepAlarmModal] expo-audio fallback warning:', err);
+        console.warn('[SleepAlarmModal] expo-audio warning:', err);
       }
     }
   }, []);
@@ -176,15 +132,6 @@ export function SleepAlarmModal({ visible, onDismiss }) {
     if (webIntervalRef.current) {
       clearInterval(webIntervalRef.current);
       webIntervalRef.current = null;
-    }
-
-    // expo-av
-    if (soundAvRef.current) {
-      try {
-        await soundAvRef.current.stopAsync();
-        await soundAvRef.current.unloadAsync();
-      } catch (_) {}
-      soundAvRef.current = null;
     }
 
     // expo-audio
