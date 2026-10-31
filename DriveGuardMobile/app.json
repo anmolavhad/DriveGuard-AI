@@ -54,11 +54,6 @@
       "expo-status-bar",
       "expo-audio",
       "expo-asset"
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "your-eas-project-id"
-      }
-    }
+    ]
   }
 }
