@@ -47,13 +47,26 @@ export function IPConfigModal({ visible, currentIp, onSave, onClose }) {
     }
   }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const validate = (ip) => {
-    if (!ip.trim()) return 'IP address cannot be empty.';
-    if (!IPV4_REGEX.test(ip.trim())) return 'Enter a valid IPv4 address (e.g. 192.168.1.5).';
-    const parts = ip.trim().split('.').map(Number);
-    if (parts.some((p) => p < 0 || p > 255)) return 'Each octet must be between 0 and 255.';
-    return '';
+  const validate = (val) => {
+    const clean = val.trim();
+    if (!clean) return 'Server host or IP cannot be empty.';
+    const hostOnly = clean.replace(/^https?:\/\//, '').replace(/^wss?:\/\//, '').replace(/\/.*$/, '');
+    const [host] = hostOnly.split(':');
+    
+    // Check IPv4
+    if (IPV4_REGEX.test(host)) {
+      const parts = host.split('.').map(Number);
+      if (parts.some((p) => p < 0 || p > 255)) return 'Each IP octet must be between 0 and 255.';
+      return '';
+    }
+    // Check hostname / domain
+    if (host === 'localhost' || /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(host)) {
+      return '';
+    }
+    return 'Enter a valid IP (e.g. 192.168.1.5) or cloud domain (e.g. api.driveguard.com).';
   };
+
+  const isLocalIpOnly = IPV4_REGEX.test(input.trim());
 
   const handleSave = async () => {
     const err = validate(input);
@@ -84,35 +97,35 @@ export function IPConfigModal({ visible, currentIp, onSave, onClose }) {
             <View style={styles.pill} />
             <Text style={styles.title}>Server Configuration</Text>
             <Text style={styles.subtitle}>
-              Enter the local IP address of the PC running{'\n'}the DriveGuard FastAPI server.
+              Enter your local IP address for development{'\n'}or your production cloud server domain.
             </Text>
           </View>
 
           {/* Input section */}
           <View style={styles.inputSection}>
-            <Text style={styles.inputLabel}>SERVER IP ADDRESS</Text>
+            <Text style={styles.inputLabel}>SERVER IP OR CLOUD DOMAIN</Text>
             <View style={[styles.inputWrapper, error ? styles.inputError : null]}>
-              <Text style={styles.inputPrefix}>ws://</Text>
+              <Text style={styles.inputPrefix}>{isLocalIpOnly ? 'ws://' : 'host:'}</Text>
               <TextInput
                 style={styles.input}
                 value={input}
                 onChangeText={(t) => { setInput(t); setError(''); }}
-                placeholder="192.168.1.100"
+                placeholder="192.168.1.100 or api.driveguard.ai"
                 placeholderTextColor={Colors.textMuted}
-                keyboardType="numbers-and-punctuation"
+                keyboardType="url"
                 autoCorrect={false}
                 autoCapitalize="none"
                 returnKeyType="done"
                 onSubmitEditing={handleSave}
                 selectionColor={Colors.primary}
               />
-              <Text style={styles.inputSuffix}>:8000</Text>
+              {isLocalIpOnly && <Text style={styles.inputSuffix}>:8000</Text>}
             </View>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
             <Text style={styles.hint}>
-              💡 Find your PC IP with: <Text style={styles.hintCode}>ipconfig</Text> (Windows)
-              {' '}or{' '}<Text style={styles.hintCode}>ifconfig</Text> (Mac/Linux)
+              💡 Local dev: Use your PC LAN IP (e.g. <Text style={styles.hintCode}>192.168.1.15</Text>){'\n'}
+              ☁️ Cloud deploy: Enter your domain (e.g. <Text style={styles.hintCode}>api.driveguard.ai</Text>)
             </Text>
           </View>
 

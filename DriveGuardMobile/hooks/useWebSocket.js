@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { resolveWsUrl } from '../components/CameraScreen';
 
 const SEND_INTERVAL_MS  = 150;   // ~7 FPS — 5-frame trigger fires in ~0.75 s
 const INITIAL_BACKOFF   = 1000;
@@ -76,7 +77,7 @@ export function useWebSocket(serverIp, metrics) {
       wsRef.current = null;
     }
 
-    const url = `ws://${ip}:8000/ws/telemetry`;
+    const url = resolveWsUrl(ip, '/ws/telemetry');
     let ws;
     try {
       ws = new WebSocket(url);

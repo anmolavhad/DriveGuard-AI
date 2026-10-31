@@ -12,8 +12,13 @@ import {
 } from 'lucide-react';
 
 // ─── Backend API & Storage Configuration ─────────────────────────────────────
-const API_BASE = 'http://localhost:8000';
-const WS_TELEMETRY_URL = 'ws://localhost:8000/ws/telemetry';
+const RAW_API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+const API_BASE = RAW_API_BASE.replace(/\/+$/, '');
+const WS_TELEMETRY_URL = import.meta.env.VITE_WS_URL || (
+  API_BASE.startsWith('https://')
+    ? API_BASE.replace('https://', 'wss://') + '/ws/telemetry'
+    : API_BASE.replace('http://', 'ws://') + '/ws/telemetry'
+);
 
 const USERS_KEY = '@dg_users_v1';
 const OPERATORS_KEY = '@dg_operators_v1';

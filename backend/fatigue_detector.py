@@ -1036,13 +1036,15 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
 
 
 if __name__ == "__main__":
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", 8000))
     print("=" * 68)
     print("  🚀 DriveGuard AI Unified Backend Server")
     print("  Serving BOTH Expo Mobile App and Web Operator Dashboard")
     print("=" * 68)
-    print("  ► HTTP REST API:   http://0.0.0.0:8000")
-    print("  ► Mobile Camera:   ws://<YOUR_LOCAL_IP>:8000/ws/camera")
-    print("  ► Web Telemetry:   ws://<YOUR_LOCAL_IP>:8000/ws/telemetry")
+    print(f"  ► HTTP REST API:   http://{host}:{port}")
+    print(f"  ► Mobile Camera:   ws://<YOUR_HOST>:{port}/ws/camera")
+    print(f"  ► Web Telemetry:   ws://<YOUR_HOST>:{port}/ws/telemetry")
     print("=" * 68)
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    uvicorn.run("fatigue_detector:app", host=host, port=port, log_level="info")
 

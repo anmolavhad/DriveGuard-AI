@@ -45,9 +45,20 @@ class MySQLDatabase:
         )
 
     def _init_database(self):
-        """Ensures the database and required tables exist."""
-        # 1. Create DB if missing
-        conn = self._get_connection(include_db=False)
+        """Ensures the database and required tables exist with connection retry for cloud/containers."""
+        # 1. Connect with retry to allow MySQL container warmup
+        conn = None
+        retries = 6
+        for attempt in range(1, retries + 1):
+            try:
+                conn = self._get_connection(include_db=False)
+                break
+            except Exception as e:
+                if attempt == retries:
+                    raise e
+                print(f"[MySQL Warmup] Waiting for database (attempt {attempt}/{retries})...")
+                time.sleep(2)
+
         try:
             with conn.cursor() as cur:
                 cur.execute(f"CREATE DATABASE IF NOT EXISTS `{self.database}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;")

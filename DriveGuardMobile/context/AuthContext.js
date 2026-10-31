@@ -64,13 +64,36 @@ const generateUniqueDriverCode = (existingUsers) => {
   return code;
 };
 
+// ─── Resolve HTTP URL for Local IP or Cloud Production Domain ────────────────
+export const resolveHttpUrl = (serverInput, path = '') => {
+  if (!serverInput) return '';
+  const trimmed = serverInput.trim().replace(/\/+$/, '');
+  if (trimmed.startsWith('https://') || trimmed.startsWith('http://')) {
+    return `${trimmed}${path}`;
+  }
+  if (trimmed.startsWith('wss://')) {
+    return trimmed.replace('wss://', 'https://') + path;
+  }
+  if (trimmed.startsWith('ws://')) {
+    return trimmed.replace('ws://', 'http://') + path;
+  }
+  if (trimmed.includes(':')) {
+    return `http://${trimmed}${path}`;
+  }
+  if (trimmed.includes('.') && !trimmed.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+    return `https://${trimmed}${path}`;
+  }
+  return `http://${trimmed}:8000${path}`;
+};
+
 // ─── Sync driver profile with the unified DriveGuard backend ──────────────────
 const syncDriverWithBackend = async (userData) => {
   if (!userData?.driverCode) return;
   try {
     const serverIp = await AsyncStorage.getItem('@driveguard_server_ip');
     if (!serverIp) return;
-    await fetch(`http://${serverIp}:8000/api/drivers/register`, {
+    const url = resolveHttpUrl(serverIp, '/api/drivers/register');
+    await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -83,6 +106,8 @@ const syncDriverWithBackend = async (userData) => {
     });
   } catch (_) {
     // Offline or server not configured yet; local state remains primary
+  }
+};
   }
 };
 
@@ -287,7 +312,8 @@ export function AuthProvider({ children }) {
     try {
       const serverIp = await AsyncStorage.getItem('@driveguard_server_ip');
       if (serverIp) {
-        fetch(`http://${serverIp}:8000/api/sessions`, {
+        const url = resolveHttpUrl(serverIp, '/api/sessions');
+        fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(newSession),

@@ -42,6 +42,27 @@ const { width: SW, height: SH } = Dimensions.get('window');
 const FRAME_SEND_INTERVAL_MS    = 120; // ~8 FPS to backend
 const SVG_UPDATE_INTERVAL_MS    = 200; // SVG overlay refresh rate (decoupled from camera)
 
+export function resolveWsUrl(serverInput, endpoint = '/ws/camera') {
+  if (!serverInput) return '';
+  const trimmed = serverInput.trim().replace(/\/+$/, '');
+  if (trimmed.startsWith('wss://') || trimmed.startsWith('ws://')) {
+    return `${trimmed}${endpoint}`;
+  }
+  if (trimmed.startsWith('https://')) {
+    return trimmed.replace('https://', 'wss://') + endpoint;
+  }
+  if (trimmed.startsWith('http://')) {
+    return trimmed.replace('http://', 'ws://') + endpoint;
+  }
+  if (trimmed.includes(':')) {
+    return `ws://${trimmed}${endpoint}`;
+  }
+  if (trimmed.includes('.') && !trimmed.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+    return `wss://${trimmed}${endpoint}`;
+  }
+  return `ws://${trimmed}:8000${endpoint}`;
+}
+
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS = {
   CALIBRATING: { text: 'Calibrating',          color: '#94A3B8', eyeColor: '#00D9FF' },
@@ -362,7 +383,8 @@ export function CameraScreen({ route, navigation, onCriticalAlarm }) {
 
     const connect = () => {
       try {
-        ws = new WebSocket(`ws://${serverIp}:8000/ws/camera`);
+        const wsUrl = resolveWsUrl(serverIp, '/ws/camera');
+        ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
         ws.onopen = () => {
