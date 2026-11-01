@@ -8,7 +8,8 @@ import {
   Car, BarChart2, Bell, Clock, CheckCircle2, XCircle,
   Radio, Users, FileText, Plus, LogOut, X, Hash,
   Lock, User, Search, Download, ExternalLink, RefreshCw,
-  Copy, Check, ShieldAlert, Mail, ArrowRight, Sparkles, ShieldCheck
+  Copy, Check, ShieldAlert, Mail, ArrowRight, Sparkles, ShieldCheck,
+  Server, Zap
 } from 'lucide-react';
 
 // ─── Backend API & Storage Configuration ─────────────────────────────────────
@@ -110,8 +111,205 @@ function ChartTooltip({ active, payload, label }) {
   );
 }
 
+// ─── Render Cloud Anti-Sleep Keep-Alive Engine ────────────────────────────────
+// Render Free tier enters sleep/hibernation after 15 minutes of inactivity.
+// This hook fires an automated dummy HTTP GET request to /health every 10 minutes
+// (600,000 ms) so the cloud instance stays persistently awake and warm.
+const KEEP_ALIVE_INTERVAL_MS = 10 * 60 * 1000;
+
+function useRenderKeepAlive() {
+  const [status, setStatus] = useState('idle'); // 'idle' | 'pinging' | 'active' | 'waking' | 'error'
+  const [lastPing, setLastPing] = useState(null);
+  const [latencyMs, setLatencyMs] = useState(null);
+  const [pingCount, setPingCount] = useState(0);
+  const [nextPingSec, setNextPingSec] = useState(600);
+  const lastPingTimeRef = useRef(0);
+  const isPingingRef = useRef(false);
+
+  const pingServer = useCallback(async () => {
+    if (isPingingRef.current) return;
+    isPingingRef.current = true;
+    setStatus('pinging');
+    const start = performance.now();
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout for cold waking
+      const res = await fetch(`${API_BASE}/health?dg_keepalive=${Date.now()}`, {
+        method: 'GET',
+        headers: { 'X-Requested-With': 'DriveGuard-KeepAlive' },
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      const end = performance.now();
+      const elapsed = Math.round(end - start);
+      setLatencyMs(elapsed);
+      lastPingTimeRef.current = Date.now();
+      setLastPing(new Date());
+      setPingCount((c) => c + 1);
+      setNextPingSec(600);
+
+      if (res.ok) {
+        setStatus('active');
+      } else {
+        setStatus('waking');
+      }
+    } catch (err) {
+      console.warn('[KeepAlive] Ping failed or instance waking up:', err);
+      setStatus('waking');
+      setNextPingSec(60); // Retry in 60s if cold start or network error
+    } finally {
+      isPingingRef.current = false;
+    }
+  }, []);
+
+  // Periodic 10-minute interval and second-by-second countdown
+  useEffect(() => {
+    pingServer();
+
+    const intervalTimer = setInterval(() => {
+      pingServer();
+    }, KEEP_ALIVE_INTERVAL_MS);
+
+    const ticker = setInterval(() => {
+      if (lastPingTimeRef.current > 0) {
+        const elapsedSec = Math.floor((Date.now() - lastPingTimeRef.current) / 1000);
+        const rem = Math.max(0, 600 - elapsedSec);
+        setNextPingSec(rem);
+      }
+    }, 1000);
+
+    // If browser tab was background-throttled, ping when re-focused if > 9m 30s elapsed
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        const elapsed = Date.now() - lastPingTimeRef.current;
+        if (elapsed >= 570000) {
+          pingServer();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(intervalTimer);
+      clearInterval(ticker);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [pingServer]);
+
+  return {
+    status,
+    lastPing,
+    latencyMs,
+    pingCount,
+    nextPingSec,
+    pingNow: () => pingServer(),
+  };
+}
+
+function KeepAliveBadge({ keepAlive }) {
+  const [showDetails, setShowDetails] = useState(false);
+  const { status, latencyMs, pingCount, nextPingSec, pingNow } = keepAlive;
+
+  const min = Math.floor(nextPingSec / 60);
+  const sec = String(nextPingSec % 60).padStart(2, '0');
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setShowDetails((v) => !v)}
+        className={`flex items-center gap-2 text-xs border px-2.5 py-1 rounded-full transition-all cursor-pointer ${
+          status === 'active'
+            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+            : status === 'pinging'
+            ? 'border-blue-500/30 bg-blue-500/10 text-blue-300 hover:bg-blue-500/20'
+            : 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+        }`}
+        title="Render Free-Tier Anti-Sleep Engine"
+      >
+        <span
+          className={`w-2 h-2 rounded-full ${
+            status === 'active'
+              ? 'bg-emerald-400 animate-pulse'
+              : status === 'pinging'
+              ? 'bg-blue-400 animate-ping'
+              : 'bg-amber-400'
+          }`}
+        />
+        <Server className="w-3.5 h-3.5" />
+        <span className="font-mono-num font-medium text-[11px]">
+          {status === 'pinging' ? 'Pinging Cloud...' : `Awake (${min}m ${sec}s)`}
+        </span>
+      </button>
+
+      {/* Popover Card */}
+      {showDetails && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setShowDetails(false)}
+          />
+          <div className="absolute right-0 top-full mt-2 w-72 rounded-xl bg-zinc-900 border border-zinc-800 p-3.5 shadow-2xl z-50 text-left">
+            <div className="flex items-center justify-between pb-2 border-b border-zinc-800/80 mb-2.5">
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-bold text-white tracking-tight">Render Anti-Sleep Engine</span>
+              </div>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono-num font-semibold">
+                10M INTERVAL
+              </span>
+            </div>
+
+            <p className="text-[11px] text-zinc-400 leading-relaxed mb-3">
+              Automated dummy HTTP requests sent every 10 minutes prevent the Render free-tier instance from entering 15-minute idle hibernation.
+            </p>
+
+            <div className="space-y-1.5 text-[11px] font-mono-num bg-zinc-950/70 p-2.5 rounded-lg border border-zinc-800/60 mb-3">
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Service:</span>
+                <span className="text-zinc-300 truncate max-w-[150px]">Render Web Service</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Target:</span>
+                <span className="text-blue-400">/health (HTTP GET)</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Latency:</span>
+                <span className="text-emerald-400">{latencyMs ? `${latencyMs}ms` : '—'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Total Pings:</span>
+                <span className="text-zinc-200">{pingCount} sent</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Next Auto-Ping:</span>
+                <span className="text-amber-400">{min}m {sec}s</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                pingNow();
+              }}
+              disabled={status === 'pinging'}
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-white transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${status === 'pinging' ? 'animate-spin' : ''}`} />
+              <span>{status === 'pinging' ? 'Sending Dummy Ping...' : 'Ping Cloud Server Now'}</span>
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Authentication Page (Enterprise Dispatch Console) ─────────────────────────
-function AuthPage({ onLogin }) {
+function AuthPage({ onLogin, keepAlive }) {
   const [mode, setMode] = useState('login');
   const [form, setForm] = useState({ name: '', email: '', password: '', confirmPassword: '' });
   const [showPassword, setShowPassword] = useState(false);
@@ -256,7 +454,9 @@ function AuthPage({ onLogin }) {
               {/* Status pill */}
               <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse-dot" />
-                <span className="text-[11px] font-mono-num font-medium tracking-wide">SYSTEMS ONLINE</span>
+                <span className="text-[11px] font-mono-num font-medium tracking-wide">
+                  SYSTEMS ONLINE • 10M KEEP-ALIVE
+                </span>
               </div>
             </div>
 
@@ -323,7 +523,14 @@ function AuthPage({ onLogin }) {
               <span>•</span>
               <span>MySQL 8.0 ACID</span>
             </div>
-            <span className="font-mono-num text-[10px] text-zinc-600">CLUSTER: US-EAST-PRIMARY</span>
+            {keepAlive && (
+              <div className="flex items-center gap-2">
+                <span className={`w-1.5 h-1.5 rounded-full ${keepAlive.status === 'active' ? 'bg-emerald-400 animate-pulse' : 'bg-blue-400 animate-ping'}`} />
+                <span className="font-mono-num text-[10px] text-zinc-400">
+                  RENDER AWAKE ({Math.floor(keepAlive.nextPingSec / 60)}m {String(keepAlive.nextPingSec % 60).padStart(2, '0')}s)
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -732,6 +939,7 @@ function AddDriverModal({ visible, onClose, onAdd, operator }) {
 
 // ─── Main Application Component ───────────────────────────────────────────────
 export default function App() {
+  const keepAlive = useRenderKeepAlive();
   const [operator, setOperator] = useState(null);
   const [tab, setTab] = useState('monitor');
   const [isConnected, setIsConnected] = useState(false);
@@ -983,7 +1191,7 @@ export default function App() {
     document.body.removeChild(link);
   };
 
-  if (!operator) return <AuthPage onLogin={setOperator} />;
+  if (!operator) return <AuthPage onLogin={setOperator} keepAlive={keepAlive} />;
 
   // Selected driver active status & telemetry
   const isSelectedActive = selectedDriver ? isDriverActive(selectedDriver.driverCode) : false;
@@ -1061,7 +1269,9 @@ export default function App() {
         </div>
 
         {/* Right side status & operator info */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          <KeepAliveBadge keepAlive={keepAlive} />
+
           <div className="flex items-center gap-2 text-xs text-zinc-400 border border-zinc-800 bg-zinc-900/60 px-2.5 py-1 rounded-full">
             <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400 animate-pulse-dot' : 'bg-rose-500'}`} />
             <span>{isConnected ? 'Telemetry Link Online' : 'Connecting to Server...'}</span>
